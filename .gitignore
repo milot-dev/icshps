@@ -218,3 +218,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# to make sure
+.venv/
+__pycache__/
+*.pyc
+.env
+runs/*
+!runs/.gitkeep
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.DS_Store
