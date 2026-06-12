@@ -32,6 +32,13 @@ from icshps.schemas.profile import (
     ExtractionError,
     SkillRecord,
 )
+from icshps.schemas.run import (
+    ArtifactRef,
+    ArtifactStatus,
+    RunArtifactManifest,
+    RunMetadata,
+    RunStatus,
+)
 
 __all__ = [
     "ICSHPSBaseModel",
@@ -60,4 +67,9 @@ __all__ = [
     "FinalDecisionArtifact",
     "SkillRecord",
     "ExtractionError",
+    "RunStatus",
+    "ArtifactStatus",
+    "RunMetadata",
+    "ArtifactRef",
+    "RunArtifactManifest",
 ]
