@@ -1,0 +1,52 @@
+manifest_version: "1.0"
+
+bundle:
+  id: clean_standard_application
+  name: Clean Standard Application
+  description: Clean MVP bundle with one candidate, complete required inputs, and no expected major exceptions.
+
+scenario:
+  id: scenario_clean_standard_application
+  type: clean_standard_application
+  expected_routing: Fast-track review
+  tags:
+    - sprint_1
+    - clean
+    - baseline
+
+job:
+  id: job_ai_backend_engineer_001
+  title: AI Backend Engineer
+  department: Engineering
+  location: Local Demo
+  employment_type: Full-time
+
+candidates:
+  - id: candidate_001
+    application_id: app_001
+    name: Sample Candidate
+    target_job_id: job_ai_backend_engineer_001
+    resume_file: resumes/candidate_001_resume.pdf
+
+required_inputs:
+  job_description: job_description.md
+  skills_matrix: requirements/skills_matrix.yaml
+  eeo_policy: policies/eeo_policy.yaml
+  credential_rules: policies/credential_rules.yaml
+  hris_master: mock_data/hris_master.yaml
+
+optional_inputs:
+  linkedin_profiles: null
+  application_history: null
+  credential_evidence: null
+  application_volume: null
+
+execution:
+  deterministic: true
+  allow_missing_optional_inputs: true
+  require_human_review_for_final_decision: true
+
+notes:
+  - This is the first baseline bundle for Sprint 1.
+  - Optional mock files are set to null because this scenario does not need LinkedIn, duplicate, credential-risk, or surge metadata yet.
+  - The resume file path is part of the contract, but the actual PDF can be added later before loader validation.
