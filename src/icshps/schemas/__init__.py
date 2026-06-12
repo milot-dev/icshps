@@ -29,6 +29,8 @@ from icshps.schemas.profile import (
     EducationRecord,
     EmploymentRecord,
     ExtractedField,
+    ExtractionError,
+    SkillRecord,
 )
 
 __all__ = [
@@ -56,4 +58,6 @@ __all__ = [
     "MatchResultsArtifact",
     "CandidateRoutingDecision",
     "FinalDecisionArtifact",
+    "SkillRecord",
+    "ExtractionError",
 ]

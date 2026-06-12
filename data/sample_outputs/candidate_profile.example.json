@@ -1,0 +1,74 @@
+{
+  "candidate_id": "cand_001",
+  "application_id": "app_001",
+  "role_id": "ai_engineer_intern",
+  "source_file": "data/hiring_bundles/clean_standard_application/resumes/cand_001_resume.pdf",
+  "full_name": {
+    "value": "Example Candidate",
+    "confidence": 0.95,
+    "evidence": []
+  },
+  "email": {
+    "value": "candidate@example.com",
+    "confidence": 0.9,
+    "evidence": []
+  },
+  "phone": null,
+  "location": {
+    "value": "Prishtina, Kosovo",
+    "confidence": 0.8,
+    "evidence": []
+  },
+  "skills": [
+    {
+      "name": "Python",
+      "normalized_name": "python",
+      "category": "programming_language",
+      "confidence": 0.95,
+      "evidence": []
+    }
+  ],
+  "employment_history": [
+    {
+      "company": "Example AI Lab",
+      "title": "AI Engineering Intern",
+      "start_date": "2025-06",
+      "end_date": "2025-09",
+      "is_current": false,
+      "responsibilities": [
+        "Built resume parsing and matching utilities"
+      ],
+      "confidence": 0.85,
+      "evidence": []
+    }
+  ],
+  "education": [
+    {
+      "institution": "University of Prishtina",
+      "degree": "Bachelor",
+      "field_of_study": "Computer Engineering",
+      "country": "Kosovo",
+      "start_year": 2023,
+      "end_year": null,
+      "is_international": false,
+      "verification_status": null,
+      "confidence": 0.85,
+      "evidence": []
+    }
+  ],
+  "certifications": [],
+  "total_years_experience_estimate": 0.5,
+  "relevant_years_experience_estimate": 0.5,
+  "extraction_confidence": 0.85,
+  "section_confidence": {
+    "contact": 0.9,
+    "skills": 0.95,
+    "employment_history": 0.85,
+    "education": 0.85,
+    "certifications": 0.5
+  },
+  "evidence_index": [],
+  "manual_review_flags": [],
+  "synthetic_fallback_used": false,
+  "extraction_errors": []
+}
