@@ -38,6 +38,11 @@ SKILL_KEYWORDS = (
     ("Machine Learning", "machine_learning"),
 )
 
+LOW_EXTRACTION_CONFIDENCE_THRESHOLD = 0.50
+CONTACT_CONFIDENCE_WEIGHT = 0.70
+SKILLS_CONFIDENCE_WEIGHT = 0.30
+LOW_CONFIDENCE_REVIEW_FLAG = "Low extraction confidence; manual review recommended."
+
 
 def extract_candidate_profile(
     resume_text: str,
@@ -79,6 +84,18 @@ def extract_candidate_profile(
     location = extract_location(lines, source_path)
     skills = extract_skills(normalized_text, source_path)
     extraction_errors = build_extraction_errors(email=email, phone=phone)
+    section_confidence = calculate_section_confidence(
+        full_name=full_name,
+        email=email,
+        phone=phone,
+        location=location,
+        skills=skills,
+    )
+    extraction_confidence = calculate_profile_confidence(section_confidence)
+    manual_review_flags = [error.message for error in extraction_errors]
+
+    if extraction_confidence < LOW_EXTRACTION_CONFIDENCE_THRESHOLD:
+        manual_review_flags.append(LOW_CONFIDENCE_REVIEW_FLAG)
 
     return CandidateProfile(
         candidate_id=candidate_id,
@@ -95,16 +112,10 @@ def extract_candidate_profile(
         certifications=[],
         total_years_experience_estimate=None,
         relevant_years_experience_estimate=None,
-        extraction_confidence=0.75 if not extraction_errors else 0.6,
-        section_confidence={
-            "contact": 0.75 if email or phone else 0.4,
-            "skills": 0.8 if skills else 0.0,
-            "employment_history": 0.0,
-            "education": 0.0,
-            "certifications": 0.0,
-        },
+        extraction_confidence=extraction_confidence,
+        section_confidence=section_confidence,
         evidence_index=build_evidence_index(normalized_text, source_path),
-        manual_review_flags=[error.message for error in extraction_errors],
+        manual_review_flags=manual_review_flags,
         synthetic_fallback_used=False,
         extraction_errors=extraction_errors,
     )
@@ -217,6 +228,47 @@ def build_extraction_errors(
             severity="warning",
         )
     ]
+
+
+def calculate_section_confidence(
+    *,
+    full_name: ExtractedField,
+    email: ExtractedField | None,
+    phone: ExtractedField | None,
+    location: ExtractedField | None,
+    skills: list[SkillRecord],
+) -> dict[str, float]:
+    return {
+        "contact": average_confidence(
+            [
+                full_name.confidence,
+                email.confidence if email else 0.0,
+                phone.confidence if phone else 0.0,
+                location.confidence if location else 0.0,
+            ]
+        ),
+        "skills": average_confidence([skill.confidence for skill in skills]),
+        "employment_history": 0.0,
+        "education": 0.0,
+        "certifications": 0.0,
+    }
+
+
+def calculate_profile_confidence(section_confidence: dict[str, float]) -> float:
+    return round(
+        (
+            section_confidence.get("contact", 0.0) * CONTACT_CONFIDENCE_WEIGHT
+            + section_confidence.get("skills", 0.0) * SKILLS_CONFIDENCE_WEIGHT
+        ),
+        2,
+    )
+
+
+def average_confidence(values: list[float]) -> float:
+    if not values:
+        return 0.0
+
+    return round(sum(values) / len(values), 2)
 
 
 def build_evidence_index(text: str, source_path: Path) -> list[EvidenceRef]:

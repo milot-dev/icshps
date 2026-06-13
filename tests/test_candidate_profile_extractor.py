@@ -49,6 +49,49 @@ def test_extract_candidate_profile_extracts_basic_fields_and_skills():
     assert profile.certifications == []
 
 
+def test_extract_candidate_profile_calculates_confidence_scores():
+    profile = extract_candidate_profile(
+        SAMPLE_RESUME_TEXT,
+        candidate_id="cand_001",
+        application_id="app_001",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert profile.full_name.confidence == 0.8
+    assert profile.email.confidence == 0.95
+    assert profile.phone.confidence == 0.85
+    assert profile.location.confidence == 0.6
+    assert profile.section_confidence == {
+        "contact": 0.8,
+        "skills": 0.8,
+        "employment_history": 0.0,
+        "education": 0.0,
+        "certifications": 0.0,
+    }
+    assert profile.extraction_confidence == 0.8
+
+
+def test_extract_candidate_profile_flags_low_confidence_profile():
+    profile = extract_candidate_profile(
+        "Jane Doe\nPython",
+        candidate_id="cand_low_confidence",
+        application_id="app_low_confidence",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert profile.synthetic_fallback_used is False
+    assert profile.section_confidence["contact"] == 0.2
+    assert profile.section_confidence["skills"] == 0.8
+    assert profile.extraction_confidence == 0.38
+    assert "No email or phone number was detected." in profile.manual_review_flags
+    assert (
+        "Low extraction confidence; manual review recommended."
+        in profile.manual_review_flags
+    )
+
+
 def test_extract_candidate_profile_uses_fallback_for_empty_text():
     profile = extract_candidate_profile(
         "",
