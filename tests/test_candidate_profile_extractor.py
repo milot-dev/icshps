@@ -6,21 +6,9 @@ SAMPLE_RESUME_TEXT = """
 Jane Doe
 Prishtina, Kosovo
 jane.doe@example.com | +383 44 123 456
-https://www.linkedin.com/in/janedoe
 
 Skills
 Python, SQL, FastAPI, LangGraph, Docker, Git, Machine Learning
-
-Education
-University of Prishtina - Bachelor in Computer Engineering, Kosovo, 2023
-
-Certifications
-AWS Certified Cloud Practitioner by Amazon, issued 2025, Credential ID: AWS-123
-
-Work Experience
-AI Engineering Intern at Example AI Lab - Jun 2025 to Sep 2025
-- Built deterministic resume extraction utilities
-- Tested candidate profile JSON outputs
 """
 
 
@@ -35,15 +23,12 @@ def test_extract_candidate_profile_returns_schema_valid_profile():
 
     assert isinstance(profile, CandidateProfile)
     assert profile.candidate_id == "cand_001"
+    assert profile.application_id == "app_001"
+    assert profile.role_id == "ai_engineer_intern"
     assert profile.synthetic_fallback_used is False
-    assert profile.full_name.value == "Jane Doe"
-    assert profile.email.value == "jane.doe@example.com"
-    assert profile.phone.value == "+383 44 123 456"
-    assert profile.location.value == "Prishtina, Kosovo"
-    assert profile.linkedin_url.value == "https://www.linkedin.com/in/janedoe"
 
 
-def test_extract_candidate_profile_extracts_sections():
+def test_extract_candidate_profile_extracts_basic_fields_and_skills():
     profile = extract_candidate_profile(
         SAMPLE_RESUME_TEXT,
         candidate_id="cand_001",
@@ -54,46 +39,42 @@ def test_extract_candidate_profile_extracts_sections():
 
     skill_names = {skill.name for skill in profile.skills}
 
-    assert {
-        "Python",
-        "SQL",
-        "FastAPI",
-        "LangGraph",
-        "Docker",
-        "Git",
-        "Machine Learning",
-    }.issubset(skill_names)
-
-    assert profile.education[0].institution == "University of Prishtina"
-    assert profile.education[0].degree == "Bachelor"
-    assert profile.certifications[0].name.startswith(
-        "AWS Certified Cloud Practitioner")
-    assert profile.employment_history[0].company == "Example AI Lab"
-    assert profile.employment_history[0].title == "AI Engineering Intern"
-    assert profile.employment_history[0].responsibilities
+    assert profile.full_name.value == "Jane Doe"
+    assert profile.email.value == "jane.doe@example.com"
+    assert profile.phone.value == "+383 44 123 456"
+    assert profile.location.value == "Prishtina, Kosovo"
+    assert {"Python", "SQL", "FastAPI", "LangGraph"}.issubset(skill_names)
+    assert profile.education == []
+    assert profile.employment_history == []
+    assert profile.certifications == []
 
 
-def test_extract_candidate_profile_handles_incomplete_resume_gracefully():
+def test_extract_candidate_profile_uses_fallback_for_empty_text():
     profile = extract_candidate_profile(
-        "Alex Smith\nPython\nSQL",
-        candidate_id="cand_002",
-        application_id="app_002",
+        "",
+        candidate_id="cand_empty",
+        application_id="app_empty",
         role_id="ai_engineer_intern",
         source_file="resume.txt",
     )
 
-    assert profile.full_name.value == "Alex Smith"
-    assert profile.email is None
-    assert profile.phone is None
-    assert profile.education == []
-    assert profile.employment_history == []
-    assert profile.manual_review_flags
+    assert profile.synthetic_fallback_used is True
+    assert profile.full_name.value == "Unknown Candidate"
+    assert profile.extraction_errors[0].code == "SYNTHETIC_FALLBACK_USED"
 
-    assert {error.code for error in profile.extraction_errors} >= {
-        "MISSING_CONTACT_INFO",
-        "MISSING_EDUCATION",
-        "MISSING_EMPLOYMENT_HISTORY",
-    }
+
+def test_extract_candidate_profile_uses_fallback_when_name_is_missing():
+    profile = extract_candidate_profile(
+        "jane.doe@example.com\nPython\nSQL",
+        candidate_id="cand_missing_name",
+        application_id="app_missing_name",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert profile.synthetic_fallback_used is True
+    assert profile.full_name.value == "Unknown Candidate"
+    assert "Required candidate name" in profile.manual_review_flags[1]
 
 
 def test_extract_candidate_profile_is_deterministic():

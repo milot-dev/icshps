@@ -97,7 +97,6 @@ class CandidateProfile(ICSHPSBaseModel):
     email: ExtractedField | None = None
     phone: ExtractedField | None = None
     location: ExtractedField | None = None
-    linkedin_url: ExtractedField | None = None
 
     skills: list[SkillRecord] = Field(default_factory=list)
     employment_history: list[EmploymentRecord] = Field(default_factory=list)
