@@ -1,0 +1,241 @@
+from __future__ import annotations
+
+from pathlib import Path
+import re
+
+from icshps.agents.extraction.synthetic_profile_fallback import (
+    build_synthetic_candidate_profile,
+    should_use_synthetic_fallback,
+)
+from icshps.schemas.common import EvidenceRef
+from icshps.schemas.profile import (
+    CandidateProfile,
+    ExtractedField,
+    ExtractionError,
+    SkillRecord,
+)
+
+
+EMAIL_RE = re.compile(
+    r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+    re.IGNORECASE,
+)
+PHONE_RE = re.compile(
+    r"(?<!\w)(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?"
+    r"\d{3,4}[\s.-]?\d{3,4}(?!\w)"
+)
+
+SKILL_KEYWORDS = (
+    ("Python", "programming_language"),
+    ("JavaScript", "programming_language"),
+    ("TypeScript", "programming_language"),
+    ("SQL", "database"),
+    ("FastAPI", "backend"),
+    ("React", "frontend"),
+    ("Docker", "devops"),
+    ("Git", "devops"),
+    ("LangGraph", "ai_framework"),
+    ("Machine Learning", "machine_learning"),
+)
+
+
+def extract_candidate_profile(
+    resume_text: str,
+    *,
+    candidate_id: str,
+    application_id: str,
+    role_id: str,
+    source_file: str | Path = "resume_text",
+) -> CandidateProfile:
+    normalized_text = normalize_resume_text(resume_text)
+    source_path = Path(str(source_file))
+
+    if should_use_synthetic_fallback(extracted_text=normalized_text):
+        return build_synthetic_candidate_profile(
+            candidate_id=candidate_id,
+            application_id=application_id,
+            role_id=role_id,
+            source_file=source_file,
+            reason="Resume extraction returned empty text.",
+        )
+
+    lines = normalized_text.splitlines()
+    full_name = extract_full_name(lines, source_path)
+
+    if should_use_synthetic_fallback(
+        extracted_text=normalized_text,
+        missing_required_fields=full_name.value is None,
+    ):
+        return build_synthetic_candidate_profile(
+            candidate_id=candidate_id,
+            application_id=application_id,
+            role_id=role_id,
+            source_file=source_file,
+            reason="Required candidate name could not be extracted.",
+        )
+
+    email = extract_regex_field(EMAIL_RE, normalized_text, source_path, 0.95)
+    phone = extract_regex_field(PHONE_RE, normalized_text, source_path, 0.85)
+    location = extract_location(lines, source_path)
+    skills = extract_skills(normalized_text, source_path)
+    extraction_errors = build_extraction_errors(email=email, phone=phone)
+
+    return CandidateProfile(
+        candidate_id=candidate_id,
+        application_id=application_id,
+        role_id=role_id,
+        source_file=str(source_file),
+        full_name=full_name,
+        email=email,
+        phone=phone,
+        location=location,
+        skills=skills,
+        employment_history=[],
+        education=[],
+        certifications=[],
+        total_years_experience_estimate=None,
+        relevant_years_experience_estimate=None,
+        extraction_confidence=0.75 if not extraction_errors else 0.6,
+        section_confidence={
+            "contact": 0.75 if email or phone else 0.4,
+            "skills": 0.8 if skills else 0.0,
+            "employment_history": 0.0,
+            "education": 0.0,
+            "certifications": 0.0,
+        },
+        evidence_index=build_evidence_index(normalized_text, source_path),
+        manual_review_flags=[error.message for error in extraction_errors],
+        synthetic_fallback_used=False,
+        extraction_errors=extraction_errors,
+    )
+
+
+def normalize_resume_text(text: str) -> str:
+    if not text:
+        return ""
+
+    text = text.replace("\x00", "")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    lines = []
+    for line in text.split("\n"):
+        cleaned = re.sub(r"[ \t\f\v]+", " ", line).strip()
+        if cleaned:
+            lines.append(cleaned)
+
+    return "\n".join(lines)
+
+
+def extract_full_name(lines: list[str], source_path: Path) -> ExtractedField:
+    for line in lines[:6]:
+        if EMAIL_RE.search(line) or PHONE_RE.search(line):
+            continue
+
+        words = line.split()
+        if 2 <= len(words) <= 4 and not any(char.isdigit() for char in line):
+            return ExtractedField(
+                value=line,
+                confidence=0.8,
+                evidence=[make_evidence(source_path, "contact", line, 0.8)],
+            )
+
+    return ExtractedField(value=None, confidence=0.0, evidence=[])
+
+
+def extract_regex_field(
+    pattern: re.Pattern[str],
+    text: str,
+    source_path: Path,
+    confidence: float,
+) -> ExtractedField | None:
+    match = pattern.search(text)
+
+    if not match:
+        return None
+
+    value = match.group(0).strip()
+    return ExtractedField(
+        value=value,
+        confidence=confidence,
+        evidence=[make_evidence(source_path, "contact", value, confidence)],
+    )
+
+
+def extract_location(lines: list[str], source_path: Path) -> ExtractedField | None:
+    for line in lines[:8]:
+        lowered = line.lower()
+
+        if lowered.startswith("location:"):
+            value = line.split(":", 1)[1].strip()
+            return ExtractedField(
+                value=value,
+                confidence=0.7,
+                evidence=[make_evidence(source_path, "contact", line, 0.7)],
+            )
+
+        if "," in line and not EMAIL_RE.search(line) and not PHONE_RE.search(line):
+            return ExtractedField(
+                value=line,
+                confidence=0.6,
+                evidence=[make_evidence(source_path, "contact", line, 0.6)],
+            )
+
+    return None
+
+
+def extract_skills(text: str, source_path: Path) -> list[SkillRecord]:
+    skills = []
+
+    for name, category in SKILL_KEYWORDS:
+        pattern = r"(?<![A-Za-z0-9+#])" + re.escape(name) + r"(?![A-Za-z0-9+#])"
+        if re.search(pattern, text, re.IGNORECASE):
+            skills.append(
+                SkillRecord(
+                    name=name,
+                    normalized_name=re.sub(r"\s+", "_", name.lower()),
+                    category=category,
+                    confidence=0.8,
+                    evidence=[make_evidence(source_path, "skills", name, 0.8)],
+                )
+            )
+
+    return skills
+
+
+def build_extraction_errors(
+    *,
+    email: ExtractedField | None,
+    phone: ExtractedField | None,
+) -> list[ExtractionError]:
+    if email is not None or phone is not None:
+        return []
+
+    return [
+        ExtractionError(
+            code="MISSING_CONTACT_INFO",
+            message="No email or phone number was detected.",
+            severity="warning",
+        )
+    ]
+
+
+def build_evidence_index(text: str, source_path: Path) -> list[EvidenceRef]:
+    if not text:
+        return []
+
+    return [make_evidence(source_path, "resume_text", text[:240], 0.7)]
+
+
+def make_evidence(
+    source_path: Path,
+    section: str,
+    snippet: str,
+    confidence: float,
+) -> EvidenceRef:
+    return EvidenceRef(
+        source_path=source_path,
+        source_type="resume_text",
+        section=section,
+        text_snippet=re.sub(r"\s+", " ", snippet).strip()[:240],
+        confidence=confidence,
+    )
