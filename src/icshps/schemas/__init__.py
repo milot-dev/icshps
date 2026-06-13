@@ -39,6 +39,10 @@ from icshps.schemas.run import (
     RunMetadata,
     RunStatus,
 )
+from icshps.schemas.manifest import (
+    HiringBundleManifest,
+    ManifestExecutionSettings,
+)
 
 __all__ = [
     "ICSHPSBaseModel",
@@ -72,4 +76,6 @@ __all__ = [
     "RunMetadata",
     "ArtifactRef",
     "RunArtifactManifest",
+    "HiringBundleManifest",
+    "ManifestExecutionSettings",
 ]
