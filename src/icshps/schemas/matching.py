@@ -7,6 +7,17 @@ from icshps.schemas.findings import Finding
 
 """Schemas for job matching results and requirement checks."""
 
+
+class JobMatchRequirements(ICSHPSBaseModel):
+    """Typed job requirements consumed by the deterministic JD matching agent."""
+
+    job_id: str
+    must_have: list[str] = Field(default_factory=list)
+    nice_to_have: list[str] = Field(default_factory=list)
+    minimum_years_experience: float | None = Field(default=None, ge=0.0)
+    mandatory_certifications: list[str] = Field(default_factory=list)
+
+
 class RequirementCheck(ICSHPSBaseModel):
     """Result of checking one candidate against one job requirement."""
 
