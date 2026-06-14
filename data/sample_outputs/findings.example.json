@@ -1,0 +1,30 @@
+{
+  "findings": [
+    {
+      "application_id": null,
+      "candidate_id": null,
+      "category": "compliance",
+      "confidence": 1.0,
+      "created_at": "1970-01-01T00:00:00Z",
+      "description": "'Digital native' may imply a preference for younger applicants. Flagged phrase appears on line 3.",
+      "evidence": [
+        {
+          "confidence": 1.0,
+          "page_number": null,
+          "section": "line:3",
+          "source_path": "data/hiring_bundles/example/job_description.md",
+          "source_type": "job_description",
+          "text_snippet": "We want a digital native for this role."
+        }
+      ],
+      "id": "eeo-age-digital-native-001",
+      "reason": "'Digital native' may imply a preference for younger applicants.",
+      "recommendation": "Review and rewrite the job description before publishing.",
+      "requires_human_review": true,
+      "severity": "warning",
+      "source_agent": "eeo_compliance_agent_v1",
+      "title": "Age-specific job description language"
+    }
+  ],
+  "run_id": "example_run"
+}
