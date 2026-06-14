@@ -42,6 +42,9 @@ LOW_EXTRACTION_CONFIDENCE_THRESHOLD = 0.50
 CONTACT_CONFIDENCE_WEIGHT = 0.70
 SKILLS_CONFIDENCE_WEIGHT = 0.30
 LOW_CONFIDENCE_REVIEW_FLAG = "Low extraction confidence; manual review recommended."
+MISSING_EVIDENCE_REVIEW_FLAG = (
+    "Some extracted fields are missing evidence; manual review recommended."
+)
 
 
 def extract_candidate_profile(
@@ -97,6 +100,15 @@ def extract_candidate_profile(
     if extraction_confidence < LOW_EXTRACTION_CONFIDENCE_THRESHOLD:
         manual_review_flags.append(LOW_CONFIDENCE_REVIEW_FLAG)
 
+    if has_extracted_values_missing_evidence(
+        full_name=full_name,
+        email=email,
+        phone=phone,
+        location=location,
+        skills=skills,
+    ):
+        manual_review_flags.append(MISSING_EVIDENCE_REVIEW_FLAG)
+
     return CandidateProfile(
         candidate_id=candidate_id,
         application_id=application_id,
@@ -114,7 +126,13 @@ def extract_candidate_profile(
         relevant_years_experience_estimate=None,
         extraction_confidence=extraction_confidence,
         section_confidence=section_confidence,
-        evidence_index=build_evidence_index(normalized_text, source_path),
+        evidence_index=build_evidence_index(
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            location=location,
+            skills=skills,
+        ),
         manual_review_flags=manual_review_flags,
         synthetic_fallback_used=False,
         extraction_errors=extraction_errors,
@@ -271,11 +289,62 @@ def average_confidence(values: list[float]) -> float:
     return round(sum(values) / len(values), 2)
 
 
-def build_evidence_index(text: str, source_path: Path) -> list[EvidenceRef]:
-    if not text:
-        return []
+def has_extracted_values_missing_evidence(
+    *,
+    full_name: ExtractedField,
+    email: ExtractedField | None,
+    phone: ExtractedField | None,
+    location: ExtractedField | None,
+    skills: list[SkillRecord],
+) -> bool:
+    fields = [full_name, email, phone, location]
 
-    return [make_evidence(source_path, "resume_text", text[:240], 0.7)]
+    for field in fields:
+        if field and field.value and not field.evidence:
+            return True
+
+    return any(skill.name and not skill.evidence for skill in skills)
+
+
+def build_evidence_index(
+    *,
+    full_name: ExtractedField,
+    email: ExtractedField | None,
+    phone: ExtractedField | None,
+    location: ExtractedField | None,
+    skills: list[SkillRecord],
+) -> list[EvidenceRef]:
+    evidence_refs: list[EvidenceRef] = []
+
+    for field in [full_name, email, phone, location]:
+        if field:
+            evidence_refs.extend(field.evidence)
+
+    for skill in skills:
+        evidence_refs.extend(skill.evidence)
+
+    return dedupe_evidence_refs(evidence_refs)
+
+
+def dedupe_evidence_refs(evidence_refs: list[EvidenceRef]) -> list[EvidenceRef]:
+    deduped = []
+    seen = set()
+
+    for evidence in evidence_refs:
+        key = (
+            str(evidence.source_path),
+            evidence.source_type,
+            evidence.page_number,
+            evidence.section,
+            evidence.text_snippet,
+        )
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(evidence)
+
+    return deduped
 
 
 def make_evidence(

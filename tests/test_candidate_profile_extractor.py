@@ -1,5 +1,9 @@
-from icshps.agents.extraction.candidate_profile_extractor import extract_candidate_profile
-from icshps.schemas.profile import CandidateProfile
+from icshps.agents.extraction import candidate_profile_extractor
+from icshps.agents.extraction.candidate_profile_extractor import (
+    extract_candidate_profile,
+    has_extracted_values_missing_evidence,
+)
+from icshps.schemas.profile import CandidateProfile, ExtractedField, SkillRecord
 
 
 SAMPLE_RESUME_TEXT = """
@@ -70,6 +74,94 @@ def test_extract_candidate_profile_calculates_confidence_scores():
         "certifications": 0.0,
     }
     assert profile.extraction_confidence == 0.8
+
+
+def test_extract_candidate_profile_adds_field_level_evidence():
+    profile = extract_candidate_profile(
+        SAMPLE_RESUME_TEXT,
+        candidate_id="cand_001",
+        application_id="app_001",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert profile.full_name.evidence[0].section == "contact"
+    assert profile.full_name.evidence[0].text_snippet == "Jane Doe"
+    assert profile.email.evidence[0].text_snippet == "jane.doe@example.com"
+    assert profile.phone.evidence[0].text_snippet == "+383 44 123 456"
+    assert profile.location.evidence[0].text_snippet == "Prishtina, Kosovo"
+    assert all(skill.evidence for skill in profile.skills)
+
+
+def test_extract_candidate_profile_builds_central_evidence_index():
+    profile = extract_candidate_profile(
+        SAMPLE_RESUME_TEXT,
+        candidate_id="cand_001",
+        application_id="app_001",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    snippets = [evidence.text_snippet for evidence in profile.evidence_index]
+
+    assert snippets[:4] == [
+        "Jane Doe",
+        "jane.doe@example.com",
+        "+383 44 123 456",
+        "Prishtina, Kosovo",
+    ]
+    assert "Python" in snippets
+    assert "SQL" in snippets
+    assert len(snippets) == len(set(snippets))
+
+
+def test_missing_evidence_on_extracted_value_is_detected():
+    assert has_extracted_values_missing_evidence(
+        full_name=ExtractedField(value="Jane Doe", confidence=0.8, evidence=[]),
+        email=None,
+        phone=None,
+        location=None,
+        skills=[],
+    ) is True
+
+    assert has_extracted_values_missing_evidence(
+        full_name=ExtractedField(value="Jane Doe", confidence=0.8),
+        email=None,
+        phone=None,
+        location=None,
+        skills=[
+            SkillRecord(
+                name="Python",
+                normalized_name="python",
+                confidence=0.8,
+                evidence=[],
+            )
+        ],
+    ) is True
+
+
+def test_missing_evidence_on_extracted_value_adds_review_flag(monkeypatch):
+    def extract_name_without_evidence(lines, source_path):
+        return ExtractedField(value="Jane Doe", confidence=0.8, evidence=[])
+
+    monkeypatch.setattr(
+        candidate_profile_extractor,
+        "extract_full_name",
+        extract_name_without_evidence,
+    )
+
+    profile = candidate_profile_extractor.extract_candidate_profile(
+        SAMPLE_RESUME_TEXT,
+        candidate_id="cand_001",
+        application_id="app_001",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert (
+        "Some extracted fields are missing evidence; manual review recommended."
+        in profile.manual_review_flags
+    )
 
 
 def test_extract_candidate_profile_flags_low_confidence_profile():
