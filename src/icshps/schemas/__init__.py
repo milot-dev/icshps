@@ -20,6 +20,7 @@ from icshps.schemas.decision import CandidateRoutingDecision, FinalDecisionArtif
 from icshps.schemas.findings import Finding, FindingsArtifact
 from icshps.schemas.matching import (
     CandidateMatchResult,
+    JobMatchRequirements,
     MatchResultsArtifact,
     RequirementCheck,
 )
@@ -65,6 +66,7 @@ __all__ = [
     "Finding",
     "FindingsArtifact",
     "RequirementCheck",
+    "JobMatchRequirements",
     "CandidateMatchResult",
     "MatchResultsArtifact",
     "CandidateRoutingDecision",
