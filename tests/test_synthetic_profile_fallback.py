@@ -61,6 +61,28 @@ def test_synthetic_profile_includes_fallback_reason():
     assert profile.extraction_errors[0].message == reason
 
 
+def test_synthetic_profile_includes_fallback_evidence():
+    reason = "PDF extraction returned empty text."
+
+    profile = build_synthetic_candidate_profile(
+        candidate_id="cand_test",
+        application_id="app_test",
+        role_id="ai_engineer_intern",
+        source_file="resume.pdf",
+        reason=reason,
+    )
+
+    evidence = profile.evidence_index[0]
+
+    assert evidence.evidence_id == "ev_synthetic_fallback_001"
+    assert evidence.field_path == "profile"
+    assert evidence.source_type == "synthetic_fallback"
+    assert evidence.extraction_method == "synthetic_fallback"
+    assert evidence.missing_reason == reason
+    assert evidence.bounding_box is None
+    assert profile.extraction_errors[0].evidence == [evidence]
+
+
 def test_synthetic_profile_is_deterministic():
     profile_1 = build_synthetic_candidate_profile(
         candidate_id="cand_test",

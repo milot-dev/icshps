@@ -1,8 +1,10 @@
 from icshps.agents.extraction import candidate_profile_extractor
 from icshps.agents.extraction.candidate_profile_extractor import (
+    dedupe_evidence_refs,
     extract_candidate_profile,
     has_extracted_values_missing_evidence,
 )
+from icshps.schemas.common import EvidenceRef
 from icshps.schemas.profile import CandidateProfile, ExtractedField, SkillRecord
 
 
@@ -93,6 +95,25 @@ def test_extract_candidate_profile_adds_field_level_evidence():
     assert all(skill.evidence for skill in profile.skills)
 
 
+def test_extract_candidate_profile_adds_deterministic_evidence_ids_and_field_paths():
+    profile = extract_candidate_profile(
+        SAMPLE_RESUME_TEXT,
+        candidate_id="cand_001",
+        application_id="app_001",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert profile.full_name.evidence[0].evidence_id == "ev_contact_full_name_001"
+    assert profile.full_name.evidence[0].field_path == "full_name"
+    assert profile.email.evidence[0].evidence_id == "ev_contact_email_001"
+    assert profile.email.evidence[0].field_path == "email"
+    assert profile.phone.evidence[0].evidence_id == "ev_contact_phone_001"
+    assert profile.phone.evidence[0].field_path == "phone"
+    assert profile.skills[0].evidence[0].evidence_id == "ev_skill_python_001"
+    assert profile.skills[0].evidence[0].field_path == "skills[0]"
+
+
 def test_extract_candidate_profile_builds_central_evidence_index():
     profile = extract_candidate_profile(
         SAMPLE_RESUME_TEXT,
@@ -113,6 +134,31 @@ def test_extract_candidate_profile_builds_central_evidence_index():
     assert "Python" in snippets
     assert "SQL" in snippets
     assert len(snippets) == len(set(snippets))
+    assert all(evidence.evidence_id for evidence in profile.evidence_index)
+    assert all(evidence.field_path for evidence in profile.evidence_index)
+
+
+def test_evidence_index_deduplicates_by_evidence_id():
+    first = EvidenceRef(
+        evidence_id="ev_contact_email_001",
+        field_path="email",
+        source_path="resume.txt",
+        source_type="resume_text",
+        section="contact",
+        text_snippet="jane.doe@example.com",
+        confidence=0.95,
+    )
+    duplicate = EvidenceRef(
+        evidence_id="ev_contact_email_001",
+        field_path="email",
+        source_path="resume.txt",
+        source_type="resume_text",
+        section="contact",
+        text_snippet="jane.doe@example.com",
+        confidence=0.95,
+    )
+
+    assert dedupe_evidence_refs([first, duplicate]) == [first]
 
 
 def test_missing_evidence_on_extracted_value_is_detected():

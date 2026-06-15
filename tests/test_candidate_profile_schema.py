@@ -59,12 +59,22 @@ def test_invalid_extraction_error_code_fails():
 
 def test_evidence_refs_supported_on_fields_and_profile_index():
     evidence = EvidenceRef(
+        evidence_id="ev_contact_full_name_001",
+        field_path="full_name",
         source_path=Path("resumes/cand_001_resume.pdf"),
         source_type="resume_pdf",
         page_number=1,
         section="contact",
         text_snippet="Example Candidate",
         confidence=0.9,
+        extraction_method="regex_resume_text",
+        bounding_box={
+            "x0": 72.0,
+            "y0": 88.5,
+            "x1": 196.4,
+            "y1": 101.2,
+            "unit": "points",
+        },
     )
 
     profile = CandidateProfile(
@@ -83,6 +93,9 @@ def test_evidence_refs_supported_on_fields_and_profile_index():
 
     assert profile.full_name.evidence[0].source_type == "resume_pdf"
     assert profile.evidence_index[0].section == "contact"
+    assert profile.evidence_index[0].evidence_id == "ev_contact_full_name_001"
+    assert profile.evidence_index[0].field_path == "full_name"
+    assert profile.evidence_index[0].bounding_box is not None
 
 
 def test_synthetic_fallback_profile_passes():

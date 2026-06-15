@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+from icshps.agents.extraction.pdf_bounding_boxes import find_text_bounding_box
 from icshps.agents.extraction.synthetic_profile_fallback import (
     build_synthetic_candidate_profile,
     should_use_synthetic_fallback,
@@ -169,7 +170,7 @@ def extract_full_name(lines: list[str], source_path: Path) -> ExtractedField:
             return ExtractedField(
                 value=line,
                 confidence=0.8,
-                evidence=[make_evidence(source_path, "contact", line, 0.8)],
+                evidence=[make_contact_evidence(source_path, "full_name", line, 0.8)],
             )
 
     return ExtractedField(value=None, confidence=0.0, evidence=[])
@@ -190,7 +191,14 @@ def extract_regex_field(
     return ExtractedField(
         value=value,
         confidence=confidence,
-        evidence=[make_evidence(source_path, "contact", value, confidence)],
+        evidence=[
+            make_contact_evidence(
+                source_path,
+                contact_field_for_pattern(pattern),
+                value,
+                confidence,
+            )
+        ],
     )
 
 
@@ -203,14 +211,14 @@ def extract_location(lines: list[str], source_path: Path) -> ExtractedField | No
             return ExtractedField(
                 value=value,
                 confidence=0.7,
-                evidence=[make_evidence(source_path, "contact", line, 0.7)],
+                evidence=[make_contact_evidence(source_path, "location", line, 0.7)],
             )
 
         if "," in line and not EMAIL_RE.search(line) and not PHONE_RE.search(line):
             return ExtractedField(
                 value=line,
                 confidence=0.6,
-                evidence=[make_evidence(source_path, "contact", line, 0.6)],
+                evidence=[make_contact_evidence(source_path, "location", line, 0.6)],
             )
 
     return None
@@ -222,13 +230,14 @@ def extract_skills(text: str, source_path: Path) -> list[SkillRecord]:
     for name, category in SKILL_KEYWORDS:
         pattern = r"(?<![A-Za-z0-9+#])" + re.escape(name) + r"(?![A-Za-z0-9+#])"
         if re.search(pattern, text, re.IGNORECASE):
+            skill_index = len(skills)
             skills.append(
                 SkillRecord(
                     name=name,
                     normalized_name=re.sub(r"\s+", "_", name.lower()),
                     category=category,
                     confidence=0.8,
-                    evidence=[make_evidence(source_path, "skills", name, 0.8)],
+                    evidence=[make_skill_evidence(source_path, skill_index, name, 0.8)],
                 )
             )
 
@@ -269,13 +278,16 @@ def extract_certifications(text: str, source_path: Path) -> list[CertificationRe
             if year_match:
                 issued_date = year_match.group(0)
 
+            cert_index = len(certs)
             certs.append(
                 CertificationRecord(
                     name=name,
                     issuer=issuer,
                     issued_date=issued_date,
                     confidence=0.75,
-                    evidence=[make_evidence(source_path, "certification", line, 0.75)],
+                    evidence=[
+                        make_certification_evidence(source_path, cert_index, line, 0.75)
+                    ],
                 )
             )
 
@@ -390,7 +402,7 @@ def dedupe_evidence_refs(evidence_refs: list[EvidenceRef]) -> list[EvidenceRef]:
     seen = set()
 
     for evidence in evidence_refs:
-        key = (
+        key = evidence.evidence_id or (
             str(evidence.source_path),
             evidence.source_type,
             evidence.page_number,
@@ -411,11 +423,92 @@ def make_evidence(
     section: str,
     snippet: str,
     confidence: float,
+    *,
+    evidence_id: str,
+    field_path: str,
 ) -> EvidenceRef:
+    normalized_snippet = re.sub(r"\s+", " ", snippet).strip()[:240]
+    bounding_box_result = find_text_bounding_box(source_path, normalized_snippet)
+
     return EvidenceRef(
+        evidence_id=evidence_id,
+        field_path=field_path,
         source_path=source_path,
-        source_type="resume_text",
+        source_type=source_type_for_path(source_path),
+        page_number=bounding_box_result.page_number,
         section=section,
-        text_snippet=re.sub(r"\s+", " ", snippet).strip()[:240],
+        text_snippet=normalized_snippet,
         confidence=confidence,
+        extraction_method="regex_resume_text",
+        bounding_box=bounding_box_result.bounding_box,
     )
+
+
+def source_type_for_path(source_path: Path) -> str:
+    if source_path.suffix.lower() == ".pdf":
+        return "resume_pdf"
+
+    return "resume_text"
+
+
+def make_contact_evidence(
+    source_path: Path,
+    field_path: str,
+    snippet: str,
+    confidence: float,
+) -> EvidenceRef:
+    return make_evidence(
+        source_path,
+        "contact",
+        snippet,
+        confidence,
+        evidence_id=f"ev_contact_{field_path}_001",
+        field_path=field_path,
+    )
+
+
+def make_skill_evidence(
+    source_path: Path,
+    skill_index: int,
+    skill_name: str,
+    confidence: float,
+) -> EvidenceRef:
+    return make_evidence(
+        source_path,
+        "skills",
+        skill_name,
+        confidence,
+        evidence_id=f"ev_skill_{slugify_evidence_component(skill_name)}_001",
+        field_path=f"skills[{skill_index}]",
+    )
+
+
+def make_certification_evidence(
+    source_path: Path,
+    cert_index: int,
+    snippet: str,
+    confidence: float,
+) -> EvidenceRef:
+    return make_evidence(
+        source_path,
+        "certification",
+        snippet,
+        confidence,
+        evidence_id=f"ev_certification_{cert_index}_name_001",
+        field_path=f"certifications[{cert_index}].name",
+    )
+
+
+def contact_field_for_pattern(pattern: re.Pattern[str]) -> str:
+    if pattern is EMAIL_RE:
+        return "email"
+
+    if pattern is PHONE_RE:
+        return "phone"
+
+    return "contact"
+
+
+def slugify_evidence_component(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return slug or "unknown"
