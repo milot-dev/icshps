@@ -43,9 +43,15 @@ def test_end_to_end_workflow_creates_current_backend_artifacts(tmp_path: Path) -
     assert "verification_findings" in result.created_artifacts
     assert "anomaly_findings" in result.created_artifacts
 
-    assert "final_decision" in result.pending_artifacts
-    assert "shortlist" in result.pending_artifacts
-    assert "hiring_packet" in result.pending_artifacts
+    assert "final_decision" in result.created_artifacts
+    assert "shortlist" in result.created_artifacts
+    assert "hiring_packet" in result.created_artifacts
+    assert "metrics" in result.created_artifacts
+    assert "audit_log" in result.created_artifacts
+
+    assert (result.run_dir / "artifacts" / "final_decision.json").exists()
+    assert (result.run_dir / "artifacts" / "shortlist.csv").exists()
+    assert (result.run_dir / "artifacts" / "hiring_packet.json").exists()
 
 
 def test_end_to_end_workflow_marks_artifact_manifest_correctly(tmp_path: Path) -> None:
@@ -64,9 +70,11 @@ def test_end_to_end_workflow_marks_artifact_manifest_correctly(tmp_path: Path) -
     assert artifacts["verification_findings"]["status"] == "created"
     assert artifacts["anomaly_findings"]["status"] == "created"
 
-    assert artifacts["final_decision"]["status"] == "reserved"
-    assert artifacts["shortlist"]["status"] == "reserved"
-    assert artifacts["hiring_packet"]["status"] == "reserved"
+    assert artifacts["final_decision"]["status"] == "created"
+    assert artifacts["shortlist"]["status"] == "created"
+    assert artifacts["hiring_packet"]["status"] == "created"
+    assert artifacts["metrics"]["status"] == "created"
+    assert artifacts["audit_log"]["status"] == "created"
 
 
 def test_end_to_end_workflow_stops_safely_when_intake_is_blocked(

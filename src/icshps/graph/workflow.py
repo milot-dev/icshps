@@ -26,6 +26,7 @@ from icshps.services import (
     LoadedBundle,
     load_hiring_bundle,
     prepare_run_scaffold,
+    write_final_run_artifacts
 )
 
 WorkflowStatus = Literal["ready_for_downstream", "blocked", "failed"]
@@ -305,6 +306,11 @@ def run_end_to_end_workflow(
 
             final_decision = build_final_decision_from_run(scaffold)
 
+            write_final_run_artifacts(
+                scaffold=scaffold,
+                final_decision=final_decision,
+            )
+
             status = "completed"
 
         artifacts = _read_workflow_artifacts(scaffold.artifact_manifest_path)
@@ -452,7 +458,7 @@ def _run_workflow_foundation(
 
 def _end_to_end_next_step_for(status: EndToEndWorkflowStatus) -> str:
     if status == "completed":
-        return "Routing is available in memory; Task 5 can write final artifacts when explicitly started."
+        return "Final run artifacts are written; Task 6 can add the one-command CLI when explicitly started."
 
     if status == "blocked":
         return "Fix intake findings before running downstream orchestration."
@@ -540,8 +546,8 @@ def _append_end_to_end_audit_log_section(
         "6. available verification and compliance stages\n"
         "7. available anomaly stage\n\n"
         f"- Workflow status: `{status}`\n"
-        "- Stop boundary: final routing, deduplication, shortlist, final_decision, "
-        "and hiring_packet are postponed.\n"
+        "- Final artifact generation: `completed`\n"
+        "- Stop boundary: one-command CLI, scenario validation loop, and README/demo instructions are postponed.\n"
         f"- Next step: {_end_to_end_next_step_for(status)}\n\n"
         "### Created artifacts\n\n"
         f"{created_lines}\n"
