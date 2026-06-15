@@ -5,9 +5,14 @@ from typing import Any
 
 import yaml
 
-from icshps.schemas.common import EvidenceRef, FindingCategory, Severity
-from icshps.schemas.findings import Finding, FindingsArtifact
-from icshps.schemas.profile import CandidateProfile
+from icshps.schemas import (
+    EvidenceRef,
+    FindingCategory,
+    Severity,
+    Finding,
+    FindingsArtifact,
+    CandidateProfile,
+)
 
 AGENT_NAME = "mandatory_certification_check_v1"
 
@@ -29,8 +34,14 @@ def build_mandatory_certification_findings(
     for index, required_cert in enumerate(required, start=1):
         normalized_required = _normalize(required_cert["name"])
         matched = normalized_required in candidate_certs
-        severity = Severity.INFO if matched else Severity(str(required_cert["severity"]))
-        title = "Mandatory certification present" if matched else "Mandatory certification missing"
+        severity = (
+            Severity.INFO if matched else Severity(str(required_cert["severity"]))
+        )
+        title = (
+            "Mandatory certification present"
+            if matched
+            else "Mandatory certification missing"
+        )
         reason = (
             f"Candidate profile includes required certification '{required_cert['name']}'."
             if matched

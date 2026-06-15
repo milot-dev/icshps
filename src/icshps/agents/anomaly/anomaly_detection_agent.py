@@ -6,8 +6,7 @@ from typing import Any
 
 import yaml
 
-from icshps.schemas.common import EvidenceRef, FindingCategory, Severity
-from icshps.schemas.findings import Finding, FindingsArtifact
+from icshps.schemas import EvidenceRef, FindingCategory, Severity, Finding, FindingsArtifact
 
 AGENT_NAME = "surge_mode_detection_v1"
 

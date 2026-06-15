@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import re
 
-from icshps.schemas.matching import (
+from icshps.schemas import (
     CandidateMatchResult,
     JobMatchRequirements,
     RequirementCheck,
+    CandidateProfile,
+    CertificationRecord,
+    SkillRecord,
 )
-from icshps.schemas.profile import CandidateProfile, CertificationRecord, SkillRecord
 
 MUST_HAVE_WEIGHT = 45.0
 NICE_TO_HAVE_WEIGHT = 25.0

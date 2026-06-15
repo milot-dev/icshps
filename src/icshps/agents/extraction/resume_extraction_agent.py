@@ -7,14 +7,13 @@ from icshps.agents.extraction.synthetic_profile_fallback import (
     build_synthetic_candidate_profile,
     should_use_synthetic_fallback,
 )
-from icshps.schemas.common import EvidenceRef
-from icshps.schemas.profile import (
+from icshps.schemas import (
     CandidateProfile,
     ExtractedField,
     ExtractionError,
     SkillRecord,
+    EvidenceRef,
 )
-
 
 EMAIL_RE = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
