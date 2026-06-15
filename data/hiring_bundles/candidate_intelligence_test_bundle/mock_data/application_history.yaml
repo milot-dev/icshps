@@ -1,0 +1,9 @@
+candidate_id: candidate_multi_role_001
+applications:
+  - application_id: app_multi_role_backend
+    role_id: job_ai_backend_engineer_001
+  - application_id: app_multi_role_ml
+    role_id: job_ml_engineer_002
+  - application_id: app_multi_role_data
+    role_id: job_data_engineer_003
+expected_signal: duplicate_multi_role_review

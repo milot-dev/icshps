@@ -1,18 +1,16 @@
 manifest_version: '1.0'
 bundle:
-  id: candidate_intelligence_test_bundle
-  name: Candidate Intelligence Combined Stress Demo Bundle
-  description: Converted valid bundle replacing old mock-only candidate intelligence
-    test folder.
+  id: linkedin_date_contradiction
+  name: LinkedIn Date Contradiction
+  description: Resume employment dates contradict provided mock LinkedIn profile dates.
 scenario:
-  id: scenario_combined_stress_demo
-  type: combined_stress_demo
-  expected_routing: "Recommended rejection \u2014 human approval required"
+  id: scenario_linkedin_date_contradiction
+  type: linkedin_date_contradiction
+  expected_routing: Employment history inconsistency
   tags:
   - sprint_2
-  - combined
-  - stress_demo
-  - candidate_intelligence
+  - linkedin_mock
+  - employment_dates
 job:
   id: job_ai_backend_engineer_001
   title: AI Backend Engineer
@@ -20,11 +18,11 @@ job:
   location: Local Demo
   employment_type: Full-time
 candidates:
-- id: candidate_combined_001
-  application_id: app_combined_001
-  name: Blend Combined
+- id: candidate_linkedin_001
+  application_id: app_linkedin_001
+  name: Luan Dates
   target_job_id: job_ai_backend_engineer_001
-  resume_file: resumes/candidate_combined_001_resume.pdf
+  resume_file: resumes/candidate_linkedin_001_resume.pdf
 required_inputs:
   job_description: job_description.md
   skills_matrix: requirements/skills_matrix.yaml
@@ -33,9 +31,9 @@ required_inputs:
   hris_master: mock_data/hris_master.yaml
 optional_inputs:
   linkedin_profiles: mock_data/linkedin_profiles.yaml
-  application_history: mock_data/application_history.yaml
-  credential_evidence: mock_data/credential_evidence.yaml
-  application_volume: mock_data/application_volume.yaml
+  application_history: null
+  credential_evidence: null
+  application_volume: null
 execution:
   deterministic: true
   allow_missing_optional_inputs: true
