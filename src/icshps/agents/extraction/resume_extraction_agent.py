@@ -14,6 +14,7 @@ from icshps.schemas import (
     SkillRecord,
     EvidenceRef,
 )
+from icshps.schemas.profile import CertificationRecord
 
 EMAIL_RE = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
@@ -85,6 +86,7 @@ def extract_candidate_profile(
     phone = extract_regex_field(PHONE_RE, normalized_text, source_path, 0.85)
     location = extract_location(lines, source_path)
     skills = extract_skills(normalized_text, source_path)
+    certifications = extract_certifications(normalized_text, source_path)
     extraction_errors = build_extraction_errors(email=email, phone=phone)
     section_confidence = calculate_section_confidence(
         full_name=full_name,
@@ -92,6 +94,7 @@ def extract_candidate_profile(
         phone=phone,
         location=location,
         skills=skills,
+        certifications=certifications,
     )
     extraction_confidence = calculate_profile_confidence(section_confidence)
     manual_review_flags = [error.message for error in extraction_errors]
@@ -118,9 +121,9 @@ def extract_candidate_profile(
         phone=phone,
         location=location,
         skills=skills,
+        certifications=certifications,
         employment_history=[],
         education=[],
-        certifications=[],
         total_years_experience_estimate=None,
         relevant_years_experience_estimate=None,
         extraction_confidence=extraction_confidence,
@@ -131,6 +134,7 @@ def extract_candidate_profile(
             phone=phone,
             location=location,
             skills=skills,
+            certifications=certifications,
         ),
         manual_review_flags=manual_review_flags,
         synthetic_fallback_used=False,
@@ -230,6 +234,53 @@ def extract_skills(text: str, source_path: Path) -> list[SkillRecord]:
     return skills
 
 
+def extract_certifications(text: str, source_path: Path) -> list[CertificationRecord]:
+    """Extract certifications from resume text into structured CertificationRecord list."""
+    certs: list[CertificationRecord] = []
+
+    # Simple heuristics: lines containing 'cert' or 'certificate' or 'certified'
+    for line in text.splitlines():
+        lowered = line.lower()
+        if "cert" in lowered or "certificate" in lowered or "certified" in lowered:
+            # try to parse name, issuer, year
+            name = line.strip()
+            issuer = None
+            issued_date = None
+
+            # split on ' - ' or ' by ' or ',' to try to find issuer
+            if " - " in line:
+                parts = [p.strip() for p in line.split(" - ", 1)]
+                name = parts[0]
+                issuer = parts[1] if len(parts) > 1 else None
+            elif " by " in lowered:
+                parts = re.split(r" by ", line, flags=re.IGNORECASE)
+                name = parts[0].strip()
+                issuer = parts[1].strip() if len(parts) > 1 else None
+            else:
+                # comma separated: Name, Issuer, Year
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 2:
+                    name = parts[0]
+                    issuer = parts[1]
+
+            # detect a 4-digit year for issued_date
+            year_match = re.search(r"(19|20)\d{2}", line)
+            if year_match:
+                issued_date = year_match.group(0)
+
+            certs.append(
+                CertificationRecord(
+                    name=name,
+                    issuer=issuer,
+                    issued_date=issued_date,
+                    confidence=0.75,
+                    evidence=[make_evidence(source_path, "certification", line, 0.75)],
+                )
+            )
+
+    return certs
+
+
 def build_extraction_errors(
     *,
     email: ExtractedField | None,
@@ -254,6 +305,7 @@ def calculate_section_confidence(
     phone: ExtractedField | None,
     location: ExtractedField | None,
     skills: list[SkillRecord],
+    certifications: list[CertificationRecord] | None = None,
 ) -> dict[str, float]:
     return {
         "contact": average_confidence(
@@ -267,7 +319,9 @@ def calculate_section_confidence(
         "skills": average_confidence([skill.confidence for skill in skills]),
         "employment_history": 0.0,
         "education": 0.0,
-        "certifications": 0.0,
+        "certifications": average_confidence(
+            [c.confidence for c in certifications] if certifications else []
+        ),
     }
 
 
@@ -312,6 +366,7 @@ def build_evidence_index(
     phone: ExtractedField | None,
     location: ExtractedField | None,
     skills: list[SkillRecord],
+    certifications: list[CertificationRecord] | None = None,
 ) -> list[EvidenceRef]:
     evidence_refs: list[EvidenceRef] = []
 
@@ -321,6 +376,10 @@ def build_evidence_index(
 
     for skill in skills:
         evidence_refs.extend(skill.evidence)
+
+    if certifications:
+        for cert in certifications:
+            evidence_refs.extend(cert.evidence)
 
     return dedupe_evidence_refs(evidence_refs)
 

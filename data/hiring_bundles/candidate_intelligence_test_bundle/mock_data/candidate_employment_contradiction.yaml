@@ -1,0 +1,24 @@
+candidate_id: cand-0004
+name: Dana O'Neill
+education:
+  - degree: Bachelor of Arts
+    field: English Literature
+    institution: City College
+    country: IE
+    year_awarded: 2010
+certifications:
+  - name: Editorial Certification
+    issuer: PressCert
+    year: 2012
+employment_history:
+  - employer: NewsWorks
+    title: Editor
+    start_date: 2011-02-01
+    end_date: 2014-05-30
+    location: Ireland
+  - employer: NewsWorks
+    title: Senior Editor
+    start_date: 2013-06-01
+    end_date: 2018-01-15
+    location: Ireland
+notes: "Employment history contains overlapping dates (2013-06-01 overlaps with previous role) to simulate contradictory entries."
