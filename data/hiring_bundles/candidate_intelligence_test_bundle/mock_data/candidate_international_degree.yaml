@@ -1,0 +1,21 @@
+candidate_id: cand-0003
+name: Carlos Mendez
+education:
+  - degree: Licenciatura en Ingeniería (Lic.)
+    field: Ingeniería de Software
+    institution: Universidad Nacional de La Plata
+    country: AR
+    year_awarded: 2012
+  - degree: MSc
+    field: Computer Science
+    institution: University of Glasgow
+    country: UK
+    year_awarded: 2016
+certifications: []
+employment_history:
+  - employer: TechLatAm
+    title: Software Engineer
+    start_date: 2013-03-01
+    end_date: 2016-09-30
+    location: Argentina
+notes: "International degree (Argentinian licenciatura) followed by UK MSc. Useful for international degree handling."
