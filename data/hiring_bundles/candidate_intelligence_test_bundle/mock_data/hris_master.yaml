@@ -1,0 +1,10 @@
+employees:
+  - employee_id: emp-1001
+    name: Alice Rivera
+    current_title: Senior Data Scientist
+    verified_records: true
+  - employee_id: emp-1002
+    name: Bob Singh
+    current_title: Electrical Engineer
+    verified_records: false
+notes: "Simple HRIS master to support tests that reference HRIS lookups."

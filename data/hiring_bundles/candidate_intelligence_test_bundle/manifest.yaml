@@ -1,0 +1,14 @@
+name: candidate_intelligence_test_bundle
+version: 0.1.0
+description: Candidate intelligence test bundle with diverse profiles for certification, education, employment and matching scenarios.
+mock_data_path: mock_data/
+files:
+  - mock_data/candidate_full_profile.yaml
+  - mock_data/candidate_missing_mandatory_cert.yaml
+  - mock_data/candidate_international_degree.yaml
+  - mock_data/candidate_employment_contradiction.yaml
+  - mock_data/hris_master.yaml
+metadata:
+  owner: member2
+  created_by: member3-helper
+  purpose: testing and demos
