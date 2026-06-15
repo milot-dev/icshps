@@ -12,8 +12,15 @@ from icshps.agents.compliance import run_compliance_stage
 from icshps.agents.extraction import run_resume_extraction_stage
 from icshps.agents.intake import ApplicationIntakeResult, run_application_intake
 from icshps.agents.matching import run_matching_stage
+from icshps.agents.orchestrator import build_final_decision_from_run
 from icshps.agents.verification import run_verification_stage
-from icshps.schemas import ArtifactStatus, RunArtifactManifest, RunMetadata, RunStatus
+from icshps.schemas import (
+    ArtifactStatus,
+    FinalDecisionArtifact,
+    RunArtifactManifest,
+    RunMetadata,
+    RunStatus,
+)
 from icshps.services import (
     RunScaffold,
     LoadedBundle,
@@ -67,6 +74,7 @@ class EndToEndWorkflowResult:
     compliance_flags_path: Path | None
     verification_findings_path: Path | None
     anomaly_findings_path: Path | None
+    final_decision: FinalDecisionArtifact | None
     artifact_manifest_path: Path | None
     metrics_path: Path | None
     audit_log_path: Path | None
@@ -215,9 +223,9 @@ def run_end_to_end_workflow(
     """
     Run the current Sprint 2 backend pipeline in deterministic order.
 
-    This flow integrates available stage outputs only. It intentionally stops
-    before final routing, deduplication, shortlist generation, hiring packet
-    generation, and final decision artifacts.
+    This flow integrates available stage outputs and builds in-memory Task 4
+    routing decisions. It intentionally stops before writing final_decision,
+    shortlist, hiring packet, metrics finalization, and polished audit artifacts.
     """
 
     scaffold: RunScaffold | None = None
@@ -229,6 +237,7 @@ def run_end_to_end_workflow(
     compliance_flags_path: Path | None = None
     verification_findings_path: Path | None = None
     anomaly_findings_path: Path | None = None
+    final_decision: FinalDecisionArtifact | None = None
 
     try:
         foundation = _run_workflow_foundation(
@@ -294,6 +303,8 @@ def run_end_to_end_workflow(
             skipped_stages.extend(anomaly_stage.skipped_stages)
             warnings.extend(anomaly_stage.warnings)
 
+            final_decision = build_final_decision_from_run(scaffold)
+
             status = "completed"
 
         artifacts = _read_workflow_artifacts(scaffold.artifact_manifest_path)
@@ -336,6 +347,7 @@ def run_end_to_end_workflow(
             compliance_flags_path=compliance_flags_path,
             verification_findings_path=verification_findings_path,
             anomaly_findings_path=anomaly_findings_path,
+            final_decision=final_decision,
             artifact_manifest_path=scaffold.artifact_manifest_path,
             metrics_path=scaffold.artifacts_dir / "metrics.json",
             audit_log_path=scaffold.artifacts_dir / "audit_log.md",
@@ -366,6 +378,7 @@ def run_end_to_end_workflow(
                 compliance_flags_path=compliance_flags_path,
                 verification_findings_path=verification_findings_path,
                 anomaly_findings_path=anomaly_findings_path,
+                final_decision=final_decision,
                 artifact_manifest_path=scaffold.artifact_manifest_path,
                 metrics_path=scaffold.artifacts_dir / "metrics.json",
                 audit_log_path=scaffold.artifacts_dir / "audit_log.md",
@@ -389,6 +402,7 @@ def run_end_to_end_workflow(
             compliance_flags_path=None,
             verification_findings_path=None,
             anomaly_findings_path=None,
+            final_decision=None,
             artifact_manifest_path=None,
             metrics_path=None,
             audit_log_path=None,
@@ -438,7 +452,7 @@ def _run_workflow_foundation(
 
 def _end_to_end_next_step_for(status: EndToEndWorkflowStatus) -> str:
     if status == "completed":
-        return "Stop before final routing; continue only when Task 4 is explicitly started."
+        return "Routing is available in memory; Task 5 can write final artifacts when explicitly started."
 
     if status == "blocked":
         return "Fix intake findings before running downstream orchestration."
