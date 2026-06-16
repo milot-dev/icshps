@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+from icshps.agents.extraction.employment_history_extractor import (
+    extract_employment_history,
+)
 from icshps.agents.extraction.pdf_bounding_boxes import find_text_bounding_box
 from icshps.agents.extraction.synthetic_profile_fallback import (
     build_synthetic_candidate_profile,
@@ -12,6 +15,7 @@ from icshps.schemas.common import EvidenceRef
 from icshps.schemas.profile import (
     CandidateProfile,
     ConfidenceBand,
+    EmploymentRecord,
     ExtractedField,
     ExtractionError,
     SkillRecord,
@@ -102,6 +106,11 @@ def extract_candidate_profile(
     location = extract_location(lines, source_path)
     skills = extract_skills(normalized_text, source_path)
     certifications = extract_certifications(normalized_text, source_path)
+    employment_history = extract_employment_history(
+        lines,
+        source_path,
+        make_employment_evidence,
+    )
     extraction_errors = build_extraction_errors(email=email, phone=phone)
     section_confidence = calculate_section_confidence(
         full_name=full_name,
@@ -110,6 +119,7 @@ def extract_candidate_profile(
         location=location,
         skills=skills,
         certifications=certifications,
+        employment_history=employment_history,
     )
     extraction_confidence = calculate_profile_confidence(section_confidence)
     section_confidence_bands = calculate_section_confidence_bands(section_confidence)
@@ -124,6 +134,7 @@ def extract_candidate_profile(
         phone=phone,
         location=location,
         skills=skills,
+        employment_history=employment_history,
     ):
         manual_review_flags.append(MISSING_EVIDENCE_REVIEW_FLAG)
 
@@ -138,7 +149,7 @@ def extract_candidate_profile(
         location=location,
         skills=skills,
         certifications=certifications,
-        employment_history=[],
+        employment_history=employment_history,
         education=[],
         total_years_experience_estimate=None,
         relevant_years_experience_estimate=None,
@@ -153,6 +164,7 @@ def extract_candidate_profile(
             location=location,
             skills=skills,
             certifications=certifications,
+            employment_history=employment_history,
         ),
         manual_review_flags=manual_review_flags,
         synthetic_fallback_used=False,
@@ -372,6 +384,7 @@ def calculate_section_confidence(
     location: ExtractedField | None,
     skills: list[SkillRecord],
     certifications: list[CertificationRecord] | None = None,
+    employment_history: list[EmploymentRecord] | None = None,
 ) -> dict[str, float]:
     return {
         "contact": average_confidence(
@@ -383,7 +396,11 @@ def calculate_section_confidence(
             ]
         ),
         "skills": average_confidence([skill.confidence for skill in skills]),
-        "employment_history": MISSING_CONFIDENCE,
+        "employment_history": average_confidence(
+            [record.confidence for record in employment_history]
+            if employment_history
+            else []
+        ),
         "education": MISSING_CONFIDENCE,
         "certifications": average_confidence(
             [c.confidence for c in certifications] if certifications else []
@@ -434,6 +451,7 @@ def has_extracted_values_missing_evidence(
     phone: ExtractedField | None,
     location: ExtractedField | None,
     skills: list[SkillRecord],
+    employment_history: list[EmploymentRecord] | None = None,
 ) -> bool:
     fields = [full_name, email, phone, location]
 
@@ -441,7 +459,13 @@ def has_extracted_values_missing_evidence(
         if field and field.value and not field.evidence:
             return True
 
-    return any(skill.name and not skill.evidence for skill in skills)
+    if any(skill.name and not skill.evidence for skill in skills):
+        return True
+
+    return any(
+        record.company and not record.evidence
+        for record in employment_history or []
+    )
 
 
 def build_evidence_index(
@@ -452,6 +476,7 @@ def build_evidence_index(
     location: ExtractedField | None,
     skills: list[SkillRecord],
     certifications: list[CertificationRecord] | None = None,
+    employment_history: list[EmploymentRecord] | None = None,
 ) -> list[EvidenceRef]:
     evidence_refs: list[EvidenceRef] = []
 
@@ -461,6 +486,10 @@ def build_evidence_index(
 
     for skill in skills:
         evidence_refs.extend(skill.evidence)
+
+    if employment_history:
+        for employment_record in employment_history:
+            evidence_refs.extend(employment_record.evidence)
 
     if certifications:
         for cert in certifications:
@@ -568,6 +597,22 @@ def make_certification_evidence(
         confidence,
         evidence_id=f"ev_certification_{cert_index}_name_001",
         field_path=f"certifications[{cert_index}].name",
+    )
+
+
+def make_employment_evidence(
+    source_path: Path,
+    record_index: int,
+    snippet: str,
+    confidence: float,
+) -> EvidenceRef:
+    return make_evidence(
+        source_path,
+        "employment_history",
+        snippet,
+        confidence,
+        evidence_id=f"ev_employment_{record_index}_dates_001",
+        field_path=f"employment_history[{record_index}]",
     )
 
 

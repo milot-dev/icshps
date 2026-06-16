@@ -84,7 +84,32 @@
       ]
     }
   ],
-  "employment_history": [],
+  "employment_history": [
+    {
+      "company": "Example AI Lab",
+      "title": "AI Engineering Intern",
+      "start_date": "2025-06",
+      "end_date": "2025-09",
+      "is_current": false,
+      "responsibilities": [],
+      "confidence": 0.8,
+      "evidence": [
+        {
+          "evidence_id": "ev_employment_0_dates_001",
+          "field_path": "employment_history[0]",
+          "source_path": "data/hiring_bundles/clean_standard_application/resumes/candidate_001_resume.pdf",
+          "source_type": "resume_pdf",
+          "page_number": null,
+          "section": "employment_history",
+          "text_snippet": "AI Engineering Intern, Example AI Lab, Jun 2025 - Sep 2025",
+          "confidence": 0.8,
+          "extraction_method": "regex_resume_text",
+          "missing_reason": null,
+          "bounding_box": null
+        }
+      ]
+    }
+  ],
   "education": [],
   "certifications": [],
   "total_years_experience_estimate": 0.5,
@@ -94,14 +119,14 @@
   "section_confidence": {
     "contact": 0.9,
     "skills": 0.95,
-    "employment_history": 0.0,
+    "employment_history": 0.8,
     "education": 0.0,
     "certifications": 0.0
   },
   "section_confidence_bands": {
     "contact": "high",
     "skills": "high",
-    "employment_history": "low",
+    "employment_history": "high",
     "education": "low",
     "certifications": "low"
   },
@@ -154,6 +179,19 @@
       "section": "skills",
       "text_snippet": "Python",
       "confidence": 0.95,
+      "extraction_method": "regex_resume_text",
+      "missing_reason": null,
+      "bounding_box": null
+    },
+    {
+      "evidence_id": "ev_employment_0_dates_001",
+      "field_path": "employment_history[0]",
+      "source_path": "data/hiring_bundles/clean_standard_application/resumes/candidate_001_resume.pdf",
+      "source_type": "resume_pdf",
+      "page_number": null,
+      "section": "employment_history",
+      "text_snippet": "AI Engineering Intern, Example AI Lab, Jun 2025 - Sep 2025",
+      "confidence": 0.8,
       "extraction_method": "regex_resume_text",
       "missing_reason": null,
       "bounding_box": null
