@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from icshps.schemas.profile import CandidateProfile, ExtractedField, ExtractionError
+from icshps.schemas import CandidateProfile, ExtractedField, ExtractionError
 
 
 def build_synthetic_candidate_profile(

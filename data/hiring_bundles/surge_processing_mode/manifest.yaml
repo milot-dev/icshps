@@ -1,0 +1,45 @@
+manifest_version: '1.0'
+bundle:
+  id: surge_processing_mode
+  name: Surge Processing Mode
+  description: High application volume after viral job post should activate surge
+    processing mode.
+scenario:
+  id: scenario_surge_processing_mode
+  type: surge_processing_mode
+  expected_routing: Surge processing mode
+  tags:
+  - sprint_2
+  - surge
+  - bulk_applications
+job:
+  id: job_ai_backend_engineer_001
+  title: AI Backend Engineer
+  department: Engineering
+  location: Local Demo
+  employment_type: Full-time
+candidates:
+- id: candidate_surge_001
+  application_id: app_surge_001
+  name: Nora Surge
+  target_job_id: job_ai_backend_engineer_001
+  resume_file: resumes/candidate_surge_001_resume.pdf
+required_inputs:
+  job_description: job_description.md
+  skills_matrix: requirements/skills_matrix.yaml
+  eeo_policy: policies/eeo_policy.yaml
+  credential_rules: policies/credential_rules.yaml
+  hris_master: mock_data/hris_master.yaml
+optional_inputs:
+  linkedin_profiles: null
+  application_history: null
+  credential_evidence: null
+  application_volume: mock_data/application_volume.yaml
+execution:
+  deterministic: true
+  allow_missing_optional_inputs: true
+  require_human_review_for_final_decision: true
+notes:
+- Generated deterministic local test bundle for ICSHPS Task 7 validation.
+- All mock evidence is local. No LinkedIn, ATS, HRIS, or background-check integration
+  is performed.

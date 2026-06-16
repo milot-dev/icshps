@@ -7,23 +7,25 @@ from typing import Literal
 import pandas as pd
 import streamlit as st
 
-ArtifactKind = Literal["json", "markdown", "csv"]
+from icshps.services.artifact_catalog import ArtifactCatalogItem, read_artifact_catalog
+
+ArtifactKind = Literal["json", "markdown", "csv", "text"]
 
 RUNS_ROOT = Path("runs")
 
-ARTIFACTS: tuple[tuple[str, Path, ArtifactKind], ...] = (
-    ("context_packet.json", Path("inputs/context_packet.json"), "json"),
-    ("intake_findings.json", Path("artifacts/intake_findings.json"), "json"),
-    ("candidate_profile.json", Path("artifacts/candidate_profile.json"), "json"),
-    ("match_scores.json", Path("artifacts/match_scores.json"), "json"),
-    ("compliance_flags.md", Path("artifacts/compliance_flags.md"), "markdown"),
-    ("verification_findings.json", Path("artifacts/verification_findings.json"), "json"),
-    ("anomaly_findings.json", Path("artifacts/anomaly_findings.json"), "json"),
-    ("final_decision.json", Path("artifacts/final_decision.json"), "json"),
-    ("shortlist.csv", Path("artifacts/shortlist.csv"), "csv"),
-    ("hiring_packet.json", Path("artifacts/hiring_packet.json"), "json"),
-    ("metrics.json", Path("artifacts/metrics.json"), "json"),
-    ("audit_log.md", Path("artifacts/audit_log.md"), "markdown"),
+DISPLAY_ARTIFACT_KEYS: tuple[str, ...] = (
+    "context_packet",
+    "intake_findings",
+    "candidate_profile",
+    "match_scores",
+    "compliance_flags",
+    "verification_findings",
+    "anomaly_findings",
+    "final_decision",
+    "shortlist",
+    "hiring_packet",
+    "metrics",
+    "audit_log",
 )
 
 
@@ -41,12 +43,22 @@ def main() -> None:
     st.subheader("Run Artifacts")
     st.caption(f"Selected run: `{selected_run.name}`")
 
-    for label, relative_path, artifact_kind in ARTIFACTS:
-        _render_artifact(
-            label=label,
-            path=selected_run / relative_path,
-            artifact_kind=artifact_kind,
-        )
+    catalog = read_artifact_catalog(selected_run)
+
+    if not catalog.ok:
+        st.error("Could not read artifact catalog.")
+        for error in catalog.errors:
+            st.warning(error)
+        return
+
+    display_artifacts = _display_artifacts(catalog.artifacts)
+
+    if not display_artifacts:
+        st.info("No displayable artifacts found in artifact_manifest.json.")
+        return
+
+    for artifact in display_artifacts:
+        _render_artifact(artifact)
 
 
 def _select_run_directory(runs_root: Path) -> Path | None:
@@ -74,20 +86,59 @@ def _run_directories(runs_root: Path) -> list[Path]:
     )
 
 
-def _render_artifact(*, label: str, path: Path, artifact_kind: ArtifactKind) -> None:
-    with st.expander(label, expanded=False):
-        st.caption(str(path))
+def _display_artifacts(
+    artifacts: tuple[ArtifactCatalogItem, ...],
+) -> list[ArtifactCatalogItem]:
+    artifact_by_key = {artifact.key: artifact for artifact in artifacts}
 
-        if not path.exists():
+    return [
+        artifact_by_key[key]
+        for key in DISPLAY_ARTIFACT_KEYS
+        if key in artifact_by_key
+    ]
+
+
+def _render_artifact(artifact: ArtifactCatalogItem) -> None:
+    label = artifact.filename
+    artifact_kind = _artifact_kind(artifact.relative_path)
+
+    with st.expander(label, expanded=False):
+        st.caption(
+            f"`{artifact.relative_path.as_posix()}` | "
+            f"Owner: {artifact.owner} | "
+            f"Required: {_yes_no(artifact.required_for_mvp)} | "
+            f"Status: {artifact.status}"
+        )
+
+        st.write(artifact.description)
+
+        if not artifact.is_available:
             st.info("not generated yet")
             return
 
         if artifact_kind == "json":
-            _render_json(path)
+            _render_json(artifact.absolute_path)
         elif artifact_kind == "csv":
-            _render_csv(path)
+            _render_csv(artifact.absolute_path)
+        elif artifact_kind == "markdown":
+            _render_markdown(artifact.absolute_path)
         else:
-            _render_markdown(path)
+            _render_text(artifact.absolute_path)
+
+
+def _artifact_kind(path: Path) -> ArtifactKind:
+    suffix = path.suffix.lower()
+
+    if suffix == ".json":
+        return "json"
+
+    if suffix == ".csv":
+        return "csv"
+
+    if suffix in {".md", ".markdown"}:
+        return "markdown"
+
+    return "text"
 
 
 def _render_json(path: Path) -> None:
@@ -112,6 +163,14 @@ def _render_csv(path: Path) -> None:
 
 def _render_markdown(path: Path) -> None:
     st.markdown(path.read_text(encoding="utf-8"))
+
+
+def _render_text(path: Path) -> None:
+    st.code(path.read_text(encoding="utf-8"))
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
 
 
 if __name__ == "__main__":
