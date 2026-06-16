@@ -52,12 +52,27 @@ class RoutingCategory(str, Enum):
     SURGE_PROCESSING_MODE = "Surge processing mode"
 
 
+class BoundingBox(ICSHPSBaseModel):
+    """PDF text bounding box in page coordinate space."""
+
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    unit: str = "points"
+
+
 class EvidenceRef(ICSHPSBaseModel):
     """Reference to source evidence used to support an extraction, finding, or decision."""
-    
+
+    evidence_id: str | None = None
+    field_path: str | None = None
     source_path: Path
     source_type: str = Field(description="Example: resume_pdf, job_description, skills_matrix, policy, mock_data")
     page_number: int | None = None
     section: str | None = None
     text_snippet: str | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    extraction_method: str | None = None
+    missing_reason: str | None = None
+    bounding_box: BoundingBox | None = None

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from icshps.schemas import CandidateProfile, ExtractedField, ExtractionError
+from icshps.schemas.common import EvidenceRef
+from icshps.schemas.profile import CandidateProfile, ExtractedField, ExtractionError
 
 
 def build_synthetic_candidate_profile(
@@ -13,6 +14,19 @@ def build_synthetic_candidate_profile(
     source_file: str | Path = "unknown_resume.pdf",
     reason: str = "Resume extraction failed or returned incomplete data.",
 ) -> CandidateProfile:
+    fallback_evidence = EvidenceRef(
+        evidence_id="ev_synthetic_fallback_001",
+        field_path="profile",
+        source_path=Path(source_file),
+        source_type="synthetic_fallback",
+        section="fallback",
+        text_snippet=None,
+        confidence=0.0,
+        extraction_method="synthetic_fallback",
+        missing_reason=reason,
+        bounding_box=None,
+    )
+
     return CandidateProfile(
         candidate_id=candidate_id,
         application_id=application_id,
@@ -40,7 +54,7 @@ def build_synthetic_candidate_profile(
             "education": 0.0,
             "certifications": 0.0,
         },
-        evidence_index=[],
+        evidence_index=[fallback_evidence],
         manual_review_flags=[
             "Synthetic fallback profile used",
             reason,
@@ -51,6 +65,7 @@ def build_synthetic_candidate_profile(
                 code="SYNTHETIC_FALLBACK_USED",
                 message=reason,
                 severity="warning",
+                evidence=[fallback_evidence],
             )
         ],
     )
