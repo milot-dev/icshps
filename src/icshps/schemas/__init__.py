@@ -27,6 +27,7 @@ from icshps.schemas.matching import (
 from icshps.schemas.profile import (
     CandidateProfile,
     CertificationRecord,
+    ConfidenceBand,
     EducationRecord,
     EmploymentRecord,
     ExtractedField,
@@ -62,6 +63,7 @@ __all__ = [
     "EmploymentRecord",
     "EducationRecord",
     "CertificationRecord",
+    "ConfidenceBand",
     "CandidateProfile",
     "Finding",
     "FindingsArtifact",

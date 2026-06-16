@@ -47,12 +47,20 @@ def build_synthetic_candidate_profile(
         total_years_experience_estimate=None,
         relevant_years_experience_estimate=None,
         extraction_confidence=0.0,
+        extraction_confidence_band="low",
         section_confidence={
             "contact": 0.0,
             "skills": 0.0,
             "employment_history": 0.0,
             "education": 0.0,
             "certifications": 0.0,
+        },
+        section_confidence_bands={
+            "contact": "low",
+            "skills": "low",
+            "employment_history": "low",
+            "education": "low",
+            "certifications": "low",
         },
         evidence_index=[fallback_evidence],
         manual_review_flags=[

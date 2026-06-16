@@ -17,6 +17,19 @@ Skills
 Python, SQL, FastAPI, LangGraph, Docker, Git, Machine Learning
 """
 
+SAMPLE_EMPLOYMENT_RESUME_TEXT = """
+Alex Morgan
+alex.morgan@example.com | +383 44 555 777
+
+Professional Experience
+Senior Data Scientist, ByteWorks, May 2022 - Present
+Acme Corp - Data Scientist - 2019-08-01 - 2022-03-15
+Software Engineer at BuildLabs, 2017 - 2019
+
+Skills
+Python, SQL
+"""
+
 
 def test_extract_candidate_profile_returns_schema_valid_profile():
     profile = extract_candidate_profile(
@@ -55,6 +68,69 @@ def test_extract_candidate_profile_extracts_basic_fields_and_skills():
     assert profile.certifications == []
 
 
+def test_extract_candidate_profile_extracts_employment_history_records():
+    profile = extract_candidate_profile(
+        SAMPLE_EMPLOYMENT_RESUME_TEXT,
+        candidate_id="cand_employment",
+        application_id="app_employment",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert len(profile.employment_history) == 3
+
+    current_role = profile.employment_history[0]
+    assert current_role.company == "ByteWorks"
+    assert current_role.title == "Senior Data Scientist"
+    assert current_role.start_date == "2022-05"
+    assert current_role.end_date is None
+    assert current_role.is_current is True
+
+    prior_role = profile.employment_history[1]
+    assert prior_role.company == "Acme Corp"
+    assert prior_role.title == "Data Scientist"
+    assert prior_role.start_date == "2019-08-01"
+    assert prior_role.end_date == "2022-03-15"
+    assert prior_role.is_current is False
+
+    year_only_role = profile.employment_history[2]
+    assert year_only_role.company == "BuildLabs"
+    assert year_only_role.title == "Software Engineer"
+    assert year_only_role.start_date == "2017"
+    assert year_only_role.end_date == "2019"
+
+
+def test_extract_candidate_profile_adds_employment_evidence_to_index():
+    profile = extract_candidate_profile(
+        SAMPLE_EMPLOYMENT_RESUME_TEXT,
+        candidate_id="cand_employment",
+        application_id="app_employment",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    employment_evidence = profile.employment_history[0].evidence[0]
+    evidence_ids = {evidence.evidence_id for evidence in profile.evidence_index}
+
+    assert employment_evidence.evidence_id == "ev_employment_0_dates_001"
+    assert employment_evidence.field_path == "employment_history[0]"
+    assert employment_evidence.section == "employment_history"
+    assert employment_evidence.evidence_id in evidence_ids
+
+
+def test_extract_candidate_profile_calculates_employment_section_confidence():
+    profile = extract_candidate_profile(
+        SAMPLE_EMPLOYMENT_RESUME_TEXT,
+        candidate_id="cand_employment",
+        application_id="app_employment",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert profile.section_confidence["employment_history"] == 0.8
+    assert profile.section_confidence_bands["employment_history"] == "high"
+
+
 def test_extract_candidate_profile_calculates_confidence_scores():
     profile = extract_candidate_profile(
         SAMPLE_RESUME_TEXT,
@@ -75,7 +151,15 @@ def test_extract_candidate_profile_calculates_confidence_scores():
         "education": 0.0,
         "certifications": 0.0,
     }
+    assert profile.section_confidence_bands == {
+        "contact": "high",
+        "skills": "high",
+        "employment_history": "low",
+        "education": "low",
+        "certifications": "low",
+    }
     assert profile.extraction_confidence == 0.8
+    assert profile.extraction_confidence_band == "high"
 
 
 def test_extract_candidate_profile_adds_field_level_evidence():
@@ -223,6 +307,9 @@ def test_extract_candidate_profile_flags_low_confidence_profile():
     assert profile.section_confidence["contact"] == 0.2
     assert profile.section_confidence["skills"] == 0.8
     assert profile.extraction_confidence == 0.38
+    assert profile.section_confidence_bands["contact"] == "low"
+    assert profile.section_confidence_bands["skills"] == "high"
+    assert profile.extraction_confidence_band == "low"
     assert "No email or phone number was detected." in profile.manual_review_flags
     assert (
         "Low extraction confidence; manual review recommended."
@@ -241,6 +328,7 @@ def test_extract_candidate_profile_uses_fallback_for_empty_text():
 
     assert profile.synthetic_fallback_used is True
     assert profile.full_name.value == "Unknown Candidate"
+    assert profile.extraction_confidence_band == "low"
     assert profile.extraction_errors[0].code == "SYNTHETIC_FALLBACK_USED"
 
 

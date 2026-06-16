@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+from icshps.agents.extraction.employment_history_extractor import (
+    extract_employment_history,
+)
 from icshps.agents.extraction.pdf_bounding_boxes import find_text_bounding_box
 from icshps.agents.extraction.synthetic_profile_fallback import (
     build_synthetic_candidate_profile,
@@ -10,6 +13,8 @@ from icshps.agents.extraction.synthetic_profile_fallback import (
 )
 from icshps.schemas import (
     CandidateProfile,
+    ConfidenceBand,
+    EmploymentRecord,
     ExtractedField,
     ExtractionError,
     SkillRecord,
@@ -39,7 +44,19 @@ SKILL_KEYWORDS = (
     ("Machine Learning", "machine_learning"),
 )
 
-LOW_EXTRACTION_CONFIDENCE_THRESHOLD = 0.50
+HIGH_CONFIDENCE_MIN = 0.80
+MEDIUM_CONFIDENCE_MIN = 0.60
+LOW_EXTRACTION_CONFIDENCE_THRESHOLD = MEDIUM_CONFIDENCE_MIN
+
+FULL_NAME_CONFIDENCE = 0.80
+EMAIL_CONFIDENCE = 0.95
+PHONE_CONFIDENCE = 0.85
+EXPLICIT_LOCATION_CONFIDENCE = 0.70
+INFERRED_LOCATION_CONFIDENCE = 0.60
+SKILL_CONFIDENCE = 0.80
+CERTIFICATION_CONFIDENCE = 0.75
+MISSING_CONFIDENCE = 0.0
+
 CONTACT_CONFIDENCE_WEIGHT = 0.70
 SKILLS_CONFIDENCE_WEIGHT = 0.30
 LOW_CONFIDENCE_REVIEW_FLAG = "Low extraction confidence; manual review recommended."
@@ -83,11 +100,16 @@ def extract_candidate_profile(
             reason="Required candidate name could not be extracted.",
         )
 
-    email = extract_regex_field(EMAIL_RE, normalized_text, source_path, 0.95)
-    phone = extract_regex_field(PHONE_RE, normalized_text, source_path, 0.85)
+    email = extract_regex_field(EMAIL_RE, normalized_text, source_path, EMAIL_CONFIDENCE)
+    phone = extract_regex_field(PHONE_RE, normalized_text, source_path, PHONE_CONFIDENCE)
     location = extract_location(lines, source_path)
     skills = extract_skills(normalized_text, source_path)
     certifications = extract_certifications(normalized_text, source_path)
+    employment_history = extract_employment_history(
+        lines,
+        source_path,
+        make_employment_evidence,
+    )
     extraction_errors = build_extraction_errors(email=email, phone=phone)
     section_confidence = calculate_section_confidence(
         full_name=full_name,
@@ -96,8 +118,10 @@ def extract_candidate_profile(
         location=location,
         skills=skills,
         certifications=certifications,
+        employment_history=employment_history,
     )
     extraction_confidence = calculate_profile_confidence(section_confidence)
+    section_confidence_bands = calculate_section_confidence_bands(section_confidence)
     manual_review_flags = [error.message for error in extraction_errors]
 
     if extraction_confidence < LOW_EXTRACTION_CONFIDENCE_THRESHOLD:
@@ -109,6 +133,7 @@ def extract_candidate_profile(
         phone=phone,
         location=location,
         skills=skills,
+        employment_history=employment_history,
     ):
         manual_review_flags.append(MISSING_EVIDENCE_REVIEW_FLAG)
 
@@ -123,12 +148,14 @@ def extract_candidate_profile(
         location=location,
         skills=skills,
         certifications=certifications,
-        employment_history=[],
+        employment_history=employment_history,
         education=[],
         total_years_experience_estimate=None,
         relevant_years_experience_estimate=None,
         extraction_confidence=extraction_confidence,
+        extraction_confidence_band=confidence_band_for_score(extraction_confidence),
         section_confidence=section_confidence,
+        section_confidence_bands=section_confidence_bands,
         evidence_index=build_evidence_index(
             full_name=full_name,
             email=email,
@@ -136,6 +163,7 @@ def extract_candidate_profile(
             location=location,
             skills=skills,
             certifications=certifications,
+            employment_history=employment_history,
         ),
         manual_review_flags=manual_review_flags,
         synthetic_fallback_used=False,
@@ -168,11 +196,22 @@ def extract_full_name(lines: list[str], source_path: Path) -> ExtractedField:
         if 2 <= len(words) <= 4 and not any(char.isdigit() for char in line):
             return ExtractedField(
                 value=line,
-                confidence=0.8,
-                evidence=[make_contact_evidence(source_path, "full_name", line, 0.8)],
+                confidence=FULL_NAME_CONFIDENCE,
+                evidence=[
+                    make_contact_evidence(
+                        source_path,
+                        "full_name",
+                        line,
+                        FULL_NAME_CONFIDENCE,
+                    )
+                ],
             )
 
-    return ExtractedField(value=None, confidence=0.0, evidence=[])
+    return ExtractedField(
+        value=None,
+        confidence=MISSING_CONFIDENCE,
+        evidence=[],
+    )
 
 
 def extract_regex_field(
@@ -209,15 +248,29 @@ def extract_location(lines: list[str], source_path: Path) -> ExtractedField | No
             value = line.split(":", 1)[1].strip()
             return ExtractedField(
                 value=value,
-                confidence=0.7,
-                evidence=[make_contact_evidence(source_path, "location", line, 0.7)],
+                confidence=EXPLICIT_LOCATION_CONFIDENCE,
+                evidence=[
+                    make_contact_evidence(
+                        source_path,
+                        "location",
+                        line,
+                        EXPLICIT_LOCATION_CONFIDENCE,
+                    )
+                ],
             )
 
         if "," in line and not EMAIL_RE.search(line) and not PHONE_RE.search(line):
             return ExtractedField(
                 value=line,
-                confidence=0.6,
-                evidence=[make_contact_evidence(source_path, "location", line, 0.6)],
+                confidence=INFERRED_LOCATION_CONFIDENCE,
+                evidence=[
+                    make_contact_evidence(
+                        source_path,
+                        "location",
+                        line,
+                        INFERRED_LOCATION_CONFIDENCE,
+                    )
+                ],
             )
 
     return None
@@ -235,8 +288,15 @@ def extract_skills(text: str, source_path: Path) -> list[SkillRecord]:
                     name=name,
                     normalized_name=re.sub(r"\s+", "_", name.lower()),
                     category=category,
-                    confidence=0.8,
-                    evidence=[make_skill_evidence(source_path, skill_index, name, 0.8)],
+                    confidence=SKILL_CONFIDENCE,
+                    evidence=[
+                        make_skill_evidence(
+                            source_path,
+                            skill_index,
+                            name,
+                            SKILL_CONFIDENCE,
+                        )
+                    ],
                 )
             )
 
@@ -283,9 +343,14 @@ def extract_certifications(text: str, source_path: Path) -> list[CertificationRe
                     name=name,
                     issuer=issuer,
                     issued_date=issued_date,
-                    confidence=0.75,
+                    confidence=CERTIFICATION_CONFIDENCE,
                     evidence=[
-                        make_certification_evidence(source_path, cert_index, line, 0.75)
+                        make_certification_evidence(
+                            source_path,
+                            cert_index,
+                            line,
+                            CERTIFICATION_CONFIDENCE,
+                        )
                     ],
                 )
             )
@@ -318,19 +383,24 @@ def calculate_section_confidence(
     location: ExtractedField | None,
     skills: list[SkillRecord],
     certifications: list[CertificationRecord] | None = None,
+    employment_history: list[EmploymentRecord] | None = None,
 ) -> dict[str, float]:
     return {
         "contact": average_confidence(
             [
                 full_name.confidence,
-                email.confidence if email else 0.0,
-                phone.confidence if phone else 0.0,
-                location.confidence if location else 0.0,
+                email.confidence if email else MISSING_CONFIDENCE,
+                phone.confidence if phone else MISSING_CONFIDENCE,
+                location.confidence if location else MISSING_CONFIDENCE,
             ]
         ),
         "skills": average_confidence([skill.confidence for skill in skills]),
-        "employment_history": 0.0,
-        "education": 0.0,
+        "employment_history": average_confidence(
+            [record.confidence for record in employment_history]
+            if employment_history
+            else []
+        ),
+        "education": MISSING_CONFIDENCE,
         "certifications": average_confidence(
             [c.confidence for c in certifications] if certifications else []
         ),
@@ -349,9 +419,28 @@ def calculate_profile_confidence(section_confidence: dict[str, float]) -> float:
 
 def average_confidence(values: list[float]) -> float:
     if not values:
-        return 0.0
+        return MISSING_CONFIDENCE
 
     return round(sum(values) / len(values), 2)
+
+
+def calculate_section_confidence_bands(
+    section_confidence: dict[str, float],
+) -> dict[str, ConfidenceBand]:
+    return {
+        section: confidence_band_for_score(score)
+        for section, score in section_confidence.items()
+    }
+
+
+def confidence_band_for_score(score: float) -> ConfidenceBand:
+    if score >= HIGH_CONFIDENCE_MIN:
+        return "high"
+
+    if score >= MEDIUM_CONFIDENCE_MIN:
+        return "medium"
+
+    return "low"
 
 
 def has_extracted_values_missing_evidence(
@@ -361,6 +450,7 @@ def has_extracted_values_missing_evidence(
     phone: ExtractedField | None,
     location: ExtractedField | None,
     skills: list[SkillRecord],
+    employment_history: list[EmploymentRecord] | None = None,
 ) -> bool:
     fields = [full_name, email, phone, location]
 
@@ -368,7 +458,13 @@ def has_extracted_values_missing_evidence(
         if field and field.value and not field.evidence:
             return True
 
-    return any(skill.name and not skill.evidence for skill in skills)
+    if any(skill.name and not skill.evidence for skill in skills):
+        return True
+
+    return any(
+        record.company and not record.evidence
+        for record in employment_history or []
+    )
 
 
 def build_evidence_index(
@@ -379,6 +475,7 @@ def build_evidence_index(
     location: ExtractedField | None,
     skills: list[SkillRecord],
     certifications: list[CertificationRecord] | None = None,
+    employment_history: list[EmploymentRecord] | None = None,
 ) -> list[EvidenceRef]:
     evidence_refs: list[EvidenceRef] = []
 
@@ -388,6 +485,10 @@ def build_evidence_index(
 
     for skill in skills:
         evidence_refs.extend(skill.evidence)
+
+    if employment_history:
+        for employment_record in employment_history:
+            evidence_refs.extend(employment_record.evidence)
 
     if certifications:
         for cert in certifications:
@@ -495,6 +596,22 @@ def make_certification_evidence(
         confidence,
         evidence_id=f"ev_certification_{cert_index}_name_001",
         field_path=f"certifications[{cert_index}].name",
+    )
+
+
+def make_employment_evidence(
+    source_path: Path,
+    record_index: int,
+    snippet: str,
+    confidence: float,
+) -> EvidenceRef:
+    return make_evidence(
+        source_path,
+        "employment_history",
+        snippet,
+        confidence,
+        evidence_id=f"ev_employment_{record_index}_dates_001",
+        field_path=f"employment_history[{record_index}]",
     )
 
 
