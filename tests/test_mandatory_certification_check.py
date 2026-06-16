@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from icshps.agents.compliance import build_mandatory_certification_findings
+from icshps.agents.verification import build_mandatory_certification_findings
 from icshps.schemas.profile import CandidateProfile, CertificationRecord, ExtractedField
 
 

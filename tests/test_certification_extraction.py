@@ -1,6 +1,4 @@
-from pathlib import Path
-
-from icshps.agents.extraction.candidate_profile_extractor import (
+from icshps.agents.extraction import (
     extract_candidate_profile,
 )
 from icshps.schemas.profile import CertificationRecord

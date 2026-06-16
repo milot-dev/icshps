@@ -1,19 +1,2 @@
-candidate_id: cand-0002
-name: Bob Singh
-education:
-  - degree: Bachelor of Engineering
-    field: Electrical Engineering
-    institution: National Institute of Technology
-    country: IN
-    year_awarded: 2014
-certifications:
-  - name: Safety Compliance Certificate
-    issuer: SafetyBoard
-    year: 2015
-employment_history:
-  - employer: PowerGrid Ltd
-    title: Electrical Engineer
-    start_date: 2015-06-01
-    end_date: 2018-07-31
-    location: India
-notes: "Missing mandatory certification required by the sample job (e.g., Professional Engineer license)."
+candidate_id: candidate_combined_001
+mandatory_certification: missing

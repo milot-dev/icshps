@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
-from icshps.agents.anomaly.surge_mode_detection import build_surge_mode_findings
+from icshps.agents.anomaly import build_surge_mode_findings
 from icshps.schemas.common import FindingCategory, Severity
 
 

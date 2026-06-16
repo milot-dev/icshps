@@ -1,4 +1,4 @@
-from icshps.agents.extraction.synthetic_profile_fallback import (
+from icshps.agents.extraction import (
     build_synthetic_candidate_profile,
     should_use_synthetic_fallback,
 )
