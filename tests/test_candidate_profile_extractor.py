@@ -75,7 +75,15 @@ def test_extract_candidate_profile_calculates_confidence_scores():
         "education": 0.0,
         "certifications": 0.0,
     }
+    assert profile.section_confidence_bands == {
+        "contact": "high",
+        "skills": "high",
+        "employment_history": "low",
+        "education": "low",
+        "certifications": "low",
+    }
     assert profile.extraction_confidence == 0.8
+    assert profile.extraction_confidence_band == "high"
 
 
 def test_extract_candidate_profile_adds_field_level_evidence():
@@ -223,6 +231,9 @@ def test_extract_candidate_profile_flags_low_confidence_profile():
     assert profile.section_confidence["contact"] == 0.2
     assert profile.section_confidence["skills"] == 0.8
     assert profile.extraction_confidence == 0.38
+    assert profile.section_confidence_bands["contact"] == "low"
+    assert profile.section_confidence_bands["skills"] == "high"
+    assert profile.extraction_confidence_band == "low"
     assert "No email or phone number was detected." in profile.manual_review_flags
     assert (
         "Low extraction confidence; manual review recommended."
@@ -241,6 +252,7 @@ def test_extract_candidate_profile_uses_fallback_for_empty_text():
 
     assert profile.synthetic_fallback_used is True
     assert profile.full_name.value == "Unknown Candidate"
+    assert profile.extraction_confidence_band == "low"
     assert profile.extraction_errors[0].code == "SYNTHETIC_FALLBACK_USED"
 
 

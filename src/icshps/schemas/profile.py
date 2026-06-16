@@ -7,6 +7,8 @@ from icshps.schemas.common import EvidenceRef, ICSHPSBaseModel
 
 """Schemas for extracted candidate profile artifacts."""
 
+ConfidenceBand = Literal["high", "medium", "low"]
+
 
 class ExtractedField(ICSHPSBaseModel):
     """Single extracted candidate field with confidence and evidence."""
@@ -108,7 +110,9 @@ class CandidateProfile(ICSHPSBaseModel):
         default=None, ge=0.0)
 
     extraction_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    extraction_confidence_band: ConfidenceBand | None = None
     section_confidence: dict[str, float] = Field(default_factory=dict)
+    section_confidence_bands: dict[str, ConfidenceBand] = Field(default_factory=dict)
 
     evidence_index: list[EvidenceRef] = Field(default_factory=list)
     manual_review_flags: list[str] = Field(default_factory=list)

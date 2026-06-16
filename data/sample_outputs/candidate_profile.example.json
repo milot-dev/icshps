@@ -90,12 +90,20 @@
   "total_years_experience_estimate": 0.5,
   "relevant_years_experience_estimate": 0.5,
   "extraction_confidence": 0.85,
+  "extraction_confidence_band": "high",
   "section_confidence": {
     "contact": 0.9,
     "skills": 0.95,
     "employment_history": 0.0,
     "education": 0.0,
     "certifications": 0.0
+  },
+  "section_confidence_bands": {
+    "contact": "high",
+    "skills": "high",
+    "employment_history": "low",
+    "education": "low",
+    "certifications": "low"
   },
   "evidence_index": [
     {

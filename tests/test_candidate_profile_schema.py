@@ -88,6 +88,8 @@ def test_evidence_refs_supported_on_fields_and_profile_index():
             evidence=[evidence],
         ),
         extraction_confidence=0.85,
+        extraction_confidence_band="high",
+        section_confidence_bands={"contact": "high"},
         evidence_index=[evidence],
     )
 
@@ -96,6 +98,8 @@ def test_evidence_refs_supported_on_fields_and_profile_index():
     assert profile.evidence_index[0].evidence_id == "ev_contact_full_name_001"
     assert profile.evidence_index[0].field_path == "full_name"
     assert profile.evidence_index[0].bounding_box is not None
+    assert profile.extraction_confidence_band == "high"
+    assert profile.section_confidence_bands["contact"] == "high"
 
 
 def test_synthetic_fallback_profile_passes():
@@ -104,8 +108,12 @@ def test_synthetic_fallback_profile_passes():
         application_id="app_fallback_001",
         role_id="ai_engineer_intern",
         source_file="resume.pdf",
-        full_name=ExtractedField(value="Fallback Candidate", confidence=0.5),
+        full_name=ExtractedField(
+            value="Fallback Candidate",
+            confidence=0.5,
+        ),
         extraction_confidence=0.5,
+        extraction_confidence_band="low",
         synthetic_fallback_used=True,
         manual_review_flags=["Synthetic fallback profile used"],
         extraction_errors=[

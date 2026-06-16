@@ -43,6 +43,8 @@ def test_synthetic_profile_validates_against_schema():
     assert profile.synthetic_fallback_used is True
     assert profile.full_name.value == "Unknown Candidate"
     assert profile.extraction_confidence == 0.0
+    assert profile.extraction_confidence_band == "low"
+    assert all(band == "low" for band in profile.section_confidence_bands.values())
     assert profile.extraction_errors[0].code == "SYNTHETIC_FALLBACK_USED"
 
 
