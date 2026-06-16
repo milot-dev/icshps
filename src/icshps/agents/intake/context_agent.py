@@ -7,12 +7,16 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from icshps.schemas.common import FindingCategory, Severity
-from icshps.schemas.context import BundleContext
-from icshps.schemas.findings import Finding, FindingsArtifact
-from icshps.schemas.run import ArtifactStatus, RunArtifactManifest
-from icshps.services.bundle_loader import LoadedBundle, snapshot_manifest_to_run
-from icshps.services.run_scaffolding import RunScaffold
+from icshps.schemas import (
+    FindingCategory,
+    Severity,
+    BundleContext,
+    Finding,
+    FindingsArtifact,
+    ArtifactStatus,
+    RunArtifactManifest,
+)
+from icshps.services import LoadedBundle, RunScaffold, snapshot_manifest_to_run
 
 AGENT_NAME = "application_intake_context_agent"
 CONTEXT_PACKET_FILENAME = "context_packet.json"
@@ -295,7 +299,9 @@ def _scenario_optional_input_findings(context: BundleContext) -> list[Finding]:
     return findings
 
 
-def _ensure_context_matches_run(context: BundleContext | None, scaffold: RunScaffold) -> None:
+def _ensure_context_matches_run(
+    context: BundleContext | None, scaffold: RunScaffold
+) -> None:
     if context is None:
         return
 
@@ -338,7 +344,9 @@ def _has_blocking_findings(artifact: FindingsArtifact) -> bool:
 
 
 def _blocking_finding_count(artifact: FindingsArtifact) -> int:
-    return sum(1 for finding in artifact.findings if finding.severity == Severity.BLOCKING)
+    return sum(
+        1 for finding in artifact.findings if finding.severity == Severity.BLOCKING
+    )
 
 
 def _append_audit_event(path: Path, event: dict[str, Any]) -> None:
@@ -373,7 +381,9 @@ def _append_audit_log_section(
     )
 
     bundle_id = loaded_bundle.context.bundle.id if loaded_bundle.context else "unknown"
-    scenario_type = loaded_bundle.context.scenario.type if loaded_bundle.context else "unknown"
+    scenario_type = (
+        loaded_bundle.context.scenario.type if loaded_bundle.context else "unknown"
+    )
 
     section = (
         "\n## Task 6: Application Intake / Context Agent\n\n"

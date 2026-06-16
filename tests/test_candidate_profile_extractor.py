@@ -1,8 +1,8 @@
-from icshps.agents.extraction import candidate_profile_extractor
-from icshps.agents.extraction.candidate_profile_extractor import (
-    dedupe_evidence_refs,
+from icshps.agents.extraction import resume_extraction_agent
+from icshps.agents.extraction.resume_extraction_agent import (
     extract_candidate_profile,
     has_extracted_values_missing_evidence,
+    dedupe_evidence_refs
 )
 from icshps.schemas.common import EvidenceRef
 from icshps.schemas.profile import CandidateProfile, ExtractedField, SkillRecord
@@ -275,12 +275,12 @@ def test_missing_evidence_on_extracted_value_adds_review_flag(monkeypatch):
         return ExtractedField(value="Jane Doe", confidence=0.8, evidence=[])
 
     monkeypatch.setattr(
-        candidate_profile_extractor,
+        resume_extraction_agent,
         "extract_full_name",
         extract_name_without_evidence,
     )
 
-    profile = candidate_profile_extractor.extract_candidate_profile(
+    profile = resume_extraction_agent.extract_candidate_profile(
         SAMPLE_RESUME_TEXT,
         candidate_id="cand_001",
         application_id="app_001",

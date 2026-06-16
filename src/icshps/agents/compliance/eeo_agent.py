@@ -6,8 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from icshps.schemas.common import EvidenceRef, FindingCategory, Severity
-from icshps.schemas.findings import Finding, FindingsArtifact
+from icshps.schemas import EvidenceRef, FindingCategory, Severity, Finding, FindingsArtifact
 
 AGENT_NAME = "eeo_compliance_agent_v1"
 
