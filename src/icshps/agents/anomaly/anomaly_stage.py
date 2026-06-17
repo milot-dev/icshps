@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from icshps.agents.anomaly.anomaly_detection_agent import build_anomaly_findings
 from icshps.schemas import BundleContext, CandidateProfile
 from icshps.services import (
@@ -14,19 +16,12 @@ def run_anomaly_stage(
     *,
     scaffold: RunScaffold,
     context: BundleContext,
+    candidate_profiles: Sequence[CandidateProfile] | None = None,
 ) -> AgentStageResult:
     """Run the orchestration-facing anomaly findings artifact stage."""
 
     try:
-        profile_payload = read_json_artifact(
-            scaffold=scaffold,
-            artifact_key="candidate_profile",
-        )
-        profiles = (
-            [CandidateProfile.model_validate(profile_payload)]
-            if profile_payload is not None
-            else []
-        )
+        profiles = list(candidate_profiles) if candidate_profiles is not None else _read_candidate_profiles(scaffold)
         artifact = build_anomaly_findings(
             run_id=scaffold.run_id,
             candidate_profiles=profiles,
@@ -57,3 +52,14 @@ def run_anomaly_stage(
         skipped_stages=(),
         warnings=(),
     )
+
+
+def _read_candidate_profiles(scaffold: RunScaffold) -> list[CandidateProfile]:
+    profile_payload = read_json_artifact(
+        scaffold=scaffold,
+        artifact_key="candidate_profile",
+    )
+    if profile_payload is None:
+        return []
+
+    return [CandidateProfile.model_validate(profile_payload)]

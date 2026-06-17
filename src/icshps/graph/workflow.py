@@ -13,10 +13,12 @@ from icshps.agents.extraction import run_resume_extraction_stage
 from icshps.agents.intake import ApplicationIntakeResult, run_application_intake
 from icshps.agents.matching import run_matching_stage
 from icshps.agents.orchestrator import build_final_decision_from_run
+from icshps.agents.triage import build_exception_triage_findings
 from icshps.agents.verification import run_verification_stage
 from icshps.schemas import (
     ArtifactStatus,
     FinalDecisionArtifact,
+    FindingsArtifact,
     RunArtifactManifest,
     RunMetadata,
     RunStatus,
@@ -24,9 +26,12 @@ from icshps.schemas import (
 from icshps.services import (
     RunScaffold,
     LoadedBundle,
+    artifact_path,
     load_hiring_bundle,
+    mark_artifacts_created,
     prepare_run_scaffold,
-    write_final_run_artifacts
+    write_compliance_flags_md,
+    write_final_run_artifacts,
 )
 
 WorkflowStatus = Literal["ready_for_downstream", "blocked", "failed"]
@@ -274,10 +279,16 @@ def run_end_to_end_workflow(
             candidate_profile_path = profile_stage.path
             skipped_stages.extend(profile_stage.skipped_stages)
             warnings.extend(profile_stage.warnings)
+            candidate_profiles = (
+                tuple(profile_stage.payload)
+                if isinstance(profile_stage.payload, list)
+                else ()
+            )
 
             match_stage = run_matching_stage(
                 scaffold=scaffold,
                 context=context,
+                candidate_profiles=candidate_profiles,
             )
             match_scores_path = match_stage.path
             skipped_stages.extend(match_stage.skipped_stages)
@@ -286,6 +297,7 @@ def run_end_to_end_workflow(
             verification_stage = run_verification_stage(
                 scaffold=scaffold,
                 context=context,
+                candidate_profiles=candidate_profiles,
             )
             verification_findings_path = verification_stage.path
             skipped_stages.extend(verification_stage.skipped_stages)
@@ -299,16 +311,48 @@ def run_end_to_end_workflow(
             skipped_stages.extend(compliance_stage.skipped_stages)
             warnings.extend(compliance_stage.warnings)
 
-            anomaly_stage = run_anomaly_stage(scaffold=scaffold, context=context)
+            anomaly_stage = run_anomaly_stage(
+                scaffold=scaffold,
+                context=context,
+                candidate_profiles=candidate_profiles,
+            )
             anomaly_findings_path = anomaly_stage.path
             skipped_stages.extend(anomaly_stage.skipped_stages)
             warnings.extend(anomaly_stage.warnings)
 
-            final_decision = build_final_decision_from_run(scaffold)
+            final_decision = build_final_decision_from_run(
+                scaffold,
+                candidate_profiles=candidate_profiles,
+            )
+            triage_artifact = build_exception_triage_findings(
+                final_decision=final_decision,
+            )
+            final_decision = final_decision.model_copy(
+                update={
+                    "findings": [*final_decision.findings, *triage_artifact.findings],
+                    "summary": (
+                        f"{final_decision.summary or ''} "
+                        f"Added {len(triage_artifact.findings)} triage finding(s)."
+                    ).strip(),
+                }
+            )
+            compliance_flags_path = artifact_path(scaffold, "compliance_flags")
+            write_compliance_flags_md(
+                compliance_flags_path,
+                FindingsArtifact(
+                    run_id=scaffold.run_id,
+                    findings=final_decision.findings,
+                ),
+            )
+            mark_artifacts_created(
+                scaffold=scaffold,
+                artifact_keys=("compliance_flags",),
+            )
 
             write_final_run_artifacts(
                 scaffold=scaffold,
                 final_decision=final_decision,
+                candidate_profiles=list(candidate_profiles),
             )
 
             status = "completed"

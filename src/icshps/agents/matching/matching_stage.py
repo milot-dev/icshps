@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any
 
 import yaml
@@ -25,32 +26,35 @@ def run_matching_stage(
     *,
     scaffold: RunScaffold,
     context: BundleContext,
+    candidate_profiles: Sequence[CandidateProfile] | None = None,
 ) -> AgentStageResult:
     """Run the orchestration-facing JD matching artifact stage."""
 
-    profile_payload = read_json_artifact(
-        scaffold=scaffold,
-        artifact_key="candidate_profile",
-    )
-    if profile_payload is None:
+    profiles = list(candidate_profiles) if candidate_profiles is not None else _read_candidate_profiles(scaffold)
+    if not profiles:
         return AgentStageResult(
             path=None,
             created_artifacts=(),
             skipped_stages=("match_scores",),
             warnings=(
-                "Match score stage skipped because candidate_profile.json was not "
+                "Match score stage skipped because candidate profile artifacts were not "
                 "created.",
             ),
         )
 
     try:
-        candidate_profile = CandidateProfile.model_validate(profile_payload)
         requirements = _load_job_match_requirements(
             skills_matrix_path=context.required_inputs.skills_matrix,
             job_id=context.job.id,
         )
-        result = match_candidate_to_job(candidate_profile, requirements)
-        artifact = MatchResultsArtifact(run_id=scaffold.run_id, results=[result])
+        results = [
+            match_candidate_to_job(candidate_profile, requirements)
+            for candidate_profile in sorted(
+                profiles,
+                key=lambda profile: (profile.candidate_id, profile.application_id),
+            )
+        ]
+        artifact = MatchResultsArtifact(run_id=scaffold.run_id, results=results)
 
     except Exception as exc:
         return AgentStageResult(
@@ -74,6 +78,17 @@ def run_matching_stage(
         skipped_stages=(),
         warnings=(),
     )
+
+
+def _read_candidate_profiles(scaffold: RunScaffold) -> list[CandidateProfile]:
+    profile_payload = read_json_artifact(
+        scaffold=scaffold,
+        artifact_key="candidate_profile",
+    )
+    if profile_payload is None:
+        return []
+
+    return [CandidateProfile.model_validate(profile_payload)]
 
 
 def _load_job_match_requirements(

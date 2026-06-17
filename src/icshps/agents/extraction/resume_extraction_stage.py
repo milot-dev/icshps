@@ -6,7 +6,7 @@ from icshps.agents.extraction.resume_extraction_agent import extract_candidate_p
 from icshps.agents.extraction.synthetic_profile_fallback import (
     build_synthetic_candidate_profile,
 )
-from icshps.schemas import BundleContext, CandidateApplication
+from icshps.schemas import BundleContext, CandidateApplication, CandidateProfile
 from icshps.services import RunScaffold, AgentStageResult, write_json_artifact
 
 
@@ -28,51 +28,50 @@ def run_resume_extraction_stage(
             ),
         )
 
-    candidate = candidates[0]
     warnings: list[str] = []
+    profiles: list[CandidateProfile] = []
 
-    if len(candidates) > 1:
-        warnings.append(
-            "Only the first candidate was written to candidate_profile.json because "
-            "the current shared contract is CandidateProfile, not a multi-candidate list."
-        )
+    for candidate in candidates:
+        try:
+            extraction_result = extract_pdf_text(candidate.resume_file)
 
-    try:
-        extraction_result = extract_pdf_text(candidate.resume_file)
+            if extraction_result.ok:
+                profile = extract_candidate_profile(
+                    extraction_result.text,
+                    candidate_id=candidate.id,
+                    application_id=candidate.application_id,
+                    role_id=candidate.target_job_id,
+                    source_file=candidate.resume_file,
+                )
+            else:
+                reason = (
+                    f"PDF text extraction returned status '{extraction_result.status}' "
+                    f"for {candidate.id}. Issues: "
+                    f"{'; '.join(extraction_result.issues) or 'none recorded'}"
+                )
+                warnings.append(reason)
 
-        if extraction_result.ok:
-            profile = extract_candidate_profile(
-                extraction_result.text,
-                candidate_id=candidate.id,
-                application_id=candidate.application_id,
-                role_id=candidate.target_job_id,
-                source_file=candidate.resume_file,
+                profile = build_synthetic_candidate_profile(
+                    candidate_id=candidate.id,
+                    application_id=candidate.application_id,
+                    role_id=candidate.target_job_id,
+                    source_file=candidate.resume_file,
+                    reason=reason,
+                )
+            profiles.append(profile)
+
+        except Exception as exc:
+            return AgentStageResult(
+                path=None,
+                created_artifacts=(),
+                skipped_stages=("candidate_profile",),
+                warnings=(
+                    "Candidate profile stage skipped after controlled extraction error: "
+                    f"{exc}",
+                ),
             )
-        else:
-            reason = (
-                f"PDF text extraction returned status '{extraction_result.status}'. "
-                f"Issues: {'; '.join(extraction_result.issues) or 'none recorded'}"
-            )
-            warnings.append(reason)
 
-            profile = build_synthetic_candidate_profile(
-                candidate_id=candidate.id,
-                application_id=candidate.application_id,
-                role_id=candidate.target_job_id,
-                source_file=candidate.resume_file,
-                reason=reason,
-            )
-
-    except Exception as exc:
-        return AgentStageResult(
-            path=None,
-            created_artifacts=(),
-            skipped_stages=("candidate_profile",),
-            warnings=(
-                "Candidate profile stage skipped after controlled extraction error: "
-                f"{exc}",
-            ),
-        )
+    profile = profiles[0]
 
     artifact_path = write_json_artifact(
         scaffold=scaffold,
@@ -85,6 +84,7 @@ def run_resume_extraction_stage(
         created_artifacts=("candidate_profile",),
         skipped_stages=(),
         warnings=tuple(warnings),
+        payload=profiles,
     )
 
 

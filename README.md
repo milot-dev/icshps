@@ -10,7 +10,8 @@ The project focuses on controlled agent-style processing, traceable evidence, sh
 
 ## Current Project State
 
-The project is currently at the end of Sprint 1 foundations and early baseline agent implementation.
+The project is currently a local deterministic MVP backend with expanded
+multi-candidate, triage, verification, and single-PDF demo support.
 
 The repository includes:
 
@@ -23,15 +24,19 @@ The repository includes:
 - initial workflow skeleton
 - clean-PDF resume text extraction baseline
 - candidate profile extraction baseline
+- multi-candidate pipeline handling
 - synthetic profile fallback
 - JD matching baseline
 - EEO compliance checks baseline
 - mandatory certification checks baseline
+- exception triage findings
 - structured findings format
 - audit log and metrics initialization
-- unit tests for the implemented foundation
+- one-command Hiring Bundle and single-PDF demo runs
+- unit tests for the implemented foundation and backend pipeline
 
-The current workflow runs through intake and prepares the run directory for downstream agents. Downstream artifacts are reserved but not fully generated end-to-end yet.
+Interview scheduling and expanded HRIS payload mapping remain out of scope for
+the current implementation pass.
 
 ---
 
@@ -60,6 +65,14 @@ runs/<run_id>/
   inputs/context_packet.json
   inputs/manifest_snapshot.yaml
   artifacts/intake_findings.json
+  artifacts/candidate_profile.json
+  artifacts/match_scores.json
+  artifacts/compliance_flags.md
+  artifacts/verification_findings.json
+  artifacts/anomaly_findings.json
+  artifacts/final_decision.json
+  artifacts/shortlist.csv
+  artifacts/hiring_packet.json
   artifacts/metrics.json
   artifacts/audit_log.md
   logs/audit_events.jsonl
@@ -81,10 +94,16 @@ Run the test suite:
 uv run pytest
 ```
 
-Run the current Sprint 1 pipeline:
+Run the backend pipeline for a Hiring Bundle:
 
 ```bash
-uv run python scripts/run_initial_workflow.py
+uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset
+```
+
+Run the backend pipeline for a single clean PDF resume:
+
+```bash
+uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application/resumes/candidate_clean_001_resume.pdf --runs-root runs --reset
 ```
 
 Run the Streamlit demo shell:
@@ -105,7 +124,9 @@ The current pipeline writes run outputs to:
 runs/<run_id>/
 ```
 
-At the current project state, the pipeline runs through run scaffolding, bundle loading, validation, and Application Intake / Context Agent. Downstream artifacts are reserved for Sprint 2 integration.
+At the current project state, the pipeline runs through run scaffolding, bundle
+loading, validation, intake, extraction, matching, verification, compliance,
+anomaly detection, exception triage, routing, and final artifact generation.
 
 ---
 

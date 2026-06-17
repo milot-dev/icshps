@@ -103,7 +103,6 @@ def build_eeo_compliance_findings(
             jd_text=jd_text,
         )
     )
-
     return FindingsArtifact(run_id=run_id, findings=findings)
 
 
@@ -184,8 +183,11 @@ def _load_policy_rules(policy_path: Path | None) -> tuple[_Rule, ...]:
     if policy_path is None or not policy_path.exists() or policy_path.stat().st_size == 0:
         return ()
 
-    payload = yaml.safe_load(policy_path.read_text(encoding="utf-8")) or {}
-    rules_payload = payload.get("risky_phrases", [])
+    payload = _load_policy_payload(policy_path)
+    rules_payload = [
+        *payload.get("risky_phrases", []),
+        *payload.get("protected_language_rules", []),
+    ]
     rules: list[_Rule] = []
 
     for index, item in enumerate(rules_payload, start=1):
@@ -205,3 +207,8 @@ def _load_policy_rules(policy_path: Path | None) -> tuple[_Rule, ...]:
         )
 
     return tuple(rules)
+
+
+def _load_policy_payload(policy_path: Path) -> dict[str, object]:
+    payload = yaml.safe_load(policy_path.read_text(encoding="utf-8")) or {}
+    return payload if isinstance(payload, dict) else {}

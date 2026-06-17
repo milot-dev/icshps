@@ -64,6 +64,7 @@ def write_final_run_artifacts(
     *,
     scaffold: RunScaffold,
     final_decision: FinalDecisionArtifact,
+    candidate_profiles: list[CandidateProfile] | None = None,
 ) -> tuple[Path, ...]:
     """
     Write all Task 5 final artifacts for one completed backend run.
@@ -90,6 +91,7 @@ def write_final_run_artifacts(
             final_decision=final_decision,
             context=context,
             candidate_profile=candidate_profile,
+            candidate_profiles=candidate_profiles or [],
             match_results=match_results,
         ),
         write_metrics(
@@ -163,6 +165,7 @@ def write_hiring_packet(
     final_decision: FinalDecisionArtifact,
     context: BundleContext | None = None,
     candidate_profile: CandidateProfile | None = None,
+    candidate_profiles: list[CandidateProfile] | None = None,
     match_results: MatchResultsArtifact | None = None,
 ) -> Path:
     """Write a simplified local-only mock hiring packet for human review."""
@@ -177,6 +180,7 @@ def write_hiring_packet(
                 decision=decision,
                 context=context,
                 candidate_profile=candidate_profile,
+                candidate_profiles=candidate_profiles or [],
                 match_results=match_results,
             )
             for decision in _ordered_decisions(final_decision.decisions)
@@ -364,6 +368,7 @@ def _candidate_packet_summary(
     decision: CandidateRoutingDecision,
     context: BundleContext | None,
     candidate_profile: CandidateProfile | None,
+    candidate_profiles: list[CandidateProfile],
     match_results: MatchResultsArtifact | None,
 ) -> dict[str, Any]:
     candidate = _candidate_lookup(context).get(
@@ -374,7 +379,12 @@ def _candidate_packet_summary(
     return {
         "candidate_id": decision.candidate_id,
         "application_id": decision.application_id,
-        "candidate_name": _candidate_name(candidate_profile, candidate),
+        "candidate_name": _candidate_name(
+            _profile_lookup(candidate_profile, candidate_profiles).get(
+                (decision.candidate_id, decision.application_id)
+            ),
+            candidate,
+        ),
         "routing_recommendation": decision.routing_category.value,
         "routing_reason": decision.reason,
         "score": decision.score,
@@ -407,6 +417,20 @@ def _match_lookup(
         return {}
 
     return {result.application_id: result for result in match_results.results}
+
+
+def _profile_lookup(
+    candidate_profile: CandidateProfile | None,
+    candidate_profiles: list[CandidateProfile],
+) -> dict[tuple[str, str], CandidateProfile]:
+    profiles = list(candidate_profiles)
+    if candidate_profile is not None:
+        profiles.append(candidate_profile)
+
+    return {
+        (profile.candidate_id, profile.application_id): profile
+        for profile in profiles
+    }
 
 
 def _candidate_name(

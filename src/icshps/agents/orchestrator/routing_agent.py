@@ -44,7 +44,11 @@ _ROUTE_PRIORITY: tuple[RoutingCategory, ...] = (
 )
 
 
-def build_final_decision_from_run(scaffold: RunScaffold) -> FinalDecisionArtifact:
+def build_final_decision_from_run(
+    scaffold: RunScaffold,
+    *,
+    candidate_profiles: Sequence[CandidateProfile] | None = None,
+) -> FinalDecisionArtifact:
     """
     Build in-memory routing decisions from an existing run folder.
 
@@ -75,6 +79,7 @@ def build_final_decision_from_run(scaffold: RunScaffold) -> FinalDecisionArtifac
     return build_final_decision_artifact(
         context=context,
         candidate_profile=candidate_profile,
+        candidate_profiles=list(candidate_profiles or []),
         match_results=match_results,
         intake_findings=intake_findings,
         verification_findings=verification_findings,
@@ -87,6 +92,7 @@ def build_final_decision_artifact(
     *,
     context: BundleContext,
     candidate_profile: CandidateProfile | None = None,
+    candidate_profiles: list[CandidateProfile] | None = None,
     match_results: MatchResultsArtifact | None = None,
     intake_findings: FindingsArtifact | None = None,
     verification_findings: FindingsArtifact | None = None,
@@ -101,6 +107,7 @@ def build_final_decision_artifact(
 
     findings = collect_findings(
         candidate_profile=candidate_profile,
+        candidate_profiles=candidate_profiles,
         match_results=match_results,
         intake_findings=intake_findings,
         verification_findings=verification_findings,
@@ -111,6 +118,7 @@ def build_final_decision_artifact(
     decisions = build_candidate_routing_decisions(
         context=context,
         candidate_profile=candidate_profile,
+        candidate_profiles=candidate_profiles,
         match_results=match_results,
         findings=unified_findings,
     )
@@ -128,6 +136,7 @@ def build_final_decision_artifact(
 def collect_findings(
     *,
     candidate_profile: CandidateProfile | None = None,
+    candidate_profiles: list[CandidateProfile] | None = None,
     match_results: MatchResultsArtifact | None = None,
     intake_findings: FindingsArtifact | None = None,
     verification_findings: FindingsArtifact | None = None,
@@ -157,8 +166,12 @@ def collect_findings(
             findings.extend(result.findings)
             findings.extend(_missing_mandatory_findings(result))
 
-    if candidate_profile is not None:
-        findings.extend(_candidate_profile_findings(candidate_profile))
+    profiles = _ordered_profiles(candidate_profiles or [])
+    if not profiles and candidate_profile is not None:
+        profiles = [candidate_profile]
+
+    for profile in profiles:
+        findings.extend(_candidate_profile_findings(profile))
 
     return findings
 
@@ -195,6 +208,7 @@ def build_candidate_routing_decisions(
     *,
     context: BundleContext,
     candidate_profile: CandidateProfile | None = None,
+    candidate_profiles: list[CandidateProfile] | None = None,
     match_results: MatchResultsArtifact | None = None,
     findings: Sequence[Finding],
 ) -> list[CandidateRoutingDecision]:
@@ -206,7 +220,12 @@ def build_candidate_routing_decisions(
     """
 
     matches_by_application = _match_results_by_application(match_results)
-    candidates = _routing_candidates(context, match_results, candidate_profile)
+    candidates = _routing_candidates(
+        context,
+        match_results,
+        candidate_profile,
+        candidate_profiles or [],
+    )
     decisions: list[CandidateRoutingDecision] = []
 
     for candidate in candidates:
@@ -380,6 +399,7 @@ def _routing_candidates(
     context: BundleContext,
     match_results: MatchResultsArtifact | None,
     candidate_profile: CandidateProfile | None,
+    candidate_profiles: list[CandidateProfile],
 ) -> list[CandidateApplication]:
     candidates_by_key = {
         (candidate.id, candidate.application_id): candidate for candidate in context.candidates
@@ -405,6 +425,17 @@ def _routing_candidates(
                 application_id=candidate_profile.application_id,
                 name=candidate_profile.full_name.value,
                 target_job_id=candidate_profile.role_id,
+                resume_file=context.bundle_path,
+            )
+
+    for profile in candidate_profiles:
+        key = (profile.candidate_id, profile.application_id)
+        if key not in candidates_by_key:
+            candidates_by_key[key] = CandidateApplication(
+                id=profile.candidate_id,
+                application_id=profile.application_id,
+                name=profile.full_name.value,
+                target_job_id=profile.role_id,
                 resume_file=context.bundle_path,
             )
 
@@ -553,6 +584,10 @@ def _ordered_match_results(
     results: Iterable[CandidateMatchResult],
 ) -> list[CandidateMatchResult]:
     return sorted(results, key=lambda result: (result.candidate_id, result.application_id))
+
+
+def _ordered_profiles(profiles: Iterable[CandidateProfile]) -> list[CandidateProfile]:
+    return sorted(profiles, key=lambda profile: (profile.candidate_id, profile.application_id))
 
 
 def _match_results_by_application(
