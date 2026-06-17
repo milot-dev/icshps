@@ -6,9 +6,51 @@ from typing import Any
 
 import yaml
 
-from icshps.schemas import EvidenceRef, FindingCategory, Severity, Finding, FindingsArtifact
+from icshps.schemas import (
+    CandidateProfile,
+    EmploymentRecord,
+    EvidenceRef,
+    FindingCategory,
+    Severity,
+    Finding,
+    FindingsArtifact,
+)
 
 AGENT_NAME = "surge_mode_detection_v1"
+ANOMALY_AGENT_NAME = "anomaly_detection_agent_v1"
+
+
+def build_anomaly_findings(
+    *,
+    run_id: str,
+    candidate_profiles: list[CandidateProfile],
+    application_history_path: Path | None = None,
+    application_volume_path: Path | None = None,
+) -> FindingsArtifact:
+    """Detect duplicate, multi-role, employment-overlap, and surge anomalies."""
+
+    findings: list[Finding] = []
+    findings.extend(_duplicate_candidate_findings(candidate_profiles))
+    findings.extend(
+        _employment_overlap_findings(
+            candidate_profiles=candidate_profiles,
+            starting_index=len(findings) + 1,
+        )
+    )
+    findings.extend(
+        _multi_role_findings(
+            application_history_path=application_history_path,
+            starting_index=len(findings) + 1,
+        )
+    )
+    findings.extend(
+        build_surge_mode_findings(
+            run_id=run_id,
+            application_volume_path=application_volume_path,
+        ).findings
+    )
+
+    return FindingsArtifact(run_id=run_id, findings=findings)
 
 
 def build_surge_mode_findings(
@@ -79,6 +121,152 @@ def _load_application_volume_metadata(path: Path) -> dict[str, Any]:
         return {}
 
     return {}
+
+
+def _duplicate_candidate_findings(candidate_profiles: list[CandidateProfile]) -> list[Finding]:
+    profiles_by_email: dict[str, list[CandidateProfile]] = {}
+    for profile in candidate_profiles:
+        email = profile.email.value if profile.email else None
+        if email:
+            profiles_by_email.setdefault(email.strip().lower(), []).append(profile)
+
+    findings: list[Finding] = []
+    for email, profiles in sorted(profiles_by_email.items()):
+        if len(profiles) < 2:
+            continue
+        findings.append(
+            Finding(
+                id=f"anomaly-duplicate-candidate-{len(findings) + 1:03d}",
+                source_agent=ANOMALY_AGENT_NAME,
+                category=FindingCategory.ANOMALY,
+                severity=Severity.WARNING,
+                title="Duplicate candidate applications detected",
+                description=f"Multiple applications share candidate email '{email}'.",
+                reason="Duplicate applications should be grouped for reviewer handling.",
+                candidate_id=profiles[0].candidate_id,
+                application_id=profiles[0].application_id,
+                confidence=1.0,
+                evidence=[ref for profile in profiles for ref in profile.evidence_index],
+                recommendation="Route to duplicate / multi-role review.",
+                requires_human_review=True,
+            )
+        )
+
+    return findings
+
+
+def _employment_overlap_findings(
+    *,
+    candidate_profiles: list[CandidateProfile],
+    starting_index: int,
+) -> list[Finding]:
+    findings: list[Finding] = []
+
+    for profile in candidate_profiles:
+        for left_index, left in enumerate(profile.employment_history):
+            for right in profile.employment_history[left_index + 1 :]:
+                if not _employment_ranges_overlap(left, right):
+                    continue
+                findings.append(
+                    Finding(
+                        id=f"anomaly-employment-overlap-{starting_index + len(findings):03d}",
+                        source_agent=ANOMALY_AGENT_NAME,
+                        category=FindingCategory.ANOMALY,
+                        severity=Severity.WARNING,
+                        title="Overlapping employment history detected",
+                        description=(
+                            f"Roles at '{left.company}' and '{right.company}' "
+                            "have overlapping dates."
+                        ),
+                        reason="Implausible overlapping resume roles require manual review.",
+                        candidate_id=profile.candidate_id,
+                        application_id=profile.application_id,
+                        confidence=1.0,
+                        evidence=[*left.evidence, *right.evidence],
+                        recommendation="Route to employment history inconsistency manual review.",
+                        requires_human_review=True,
+                    )
+                )
+
+    return findings
+
+
+def _multi_role_findings(
+    *,
+    application_history_path: Path | None,
+    starting_index: int,
+) -> list[Finding]:
+    if (
+        application_history_path is None
+        or not application_history_path.exists()
+        or application_history_path.stat().st_size == 0
+    ):
+        return []
+
+    payload = yaml.safe_load(application_history_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(payload, dict):
+        return []
+
+    candidate_id = str(payload.get("candidate_id", "")).strip()
+    applications = [
+        item for item in payload.get("applications", []) if isinstance(item, dict)
+    ]
+    roles = {
+        str(item.get("role_id") or item.get("job_id") or "").strip()
+        for item in applications
+    }
+    roles.discard("")
+
+    if not candidate_id or len(roles) < 2:
+        return []
+
+    return [
+        Finding(
+            id=f"anomaly-multi-role-{starting_index:03d}",
+            source_agent=ANOMALY_AGENT_NAME,
+            category=FindingCategory.ANOMALY,
+            severity=Severity.WARNING,
+            title="Candidate applied to multiple roles",
+            description=f"Candidate '{candidate_id}' appears across {len(roles)} roles.",
+            reason="Same-candidate multi-role activity should be linked for review.",
+            candidate_id=candidate_id,
+            confidence=1.0,
+            evidence=[
+                EvidenceRef(
+                    source_path=application_history_path,
+                    source_type="mock_application_history",
+                    section="applications",
+                    text_snippet=", ".join(sorted(roles)),
+                    confidence=1.0,
+                )
+            ],
+            recommendation="Route to duplicate / multi-role review.",
+            requires_human_review=True,
+        )
+    ]
+
+
+def _employment_ranges_overlap(left: EmploymentRecord, right: EmploymentRecord) -> bool:
+    left_start = _month_index(left.start_date)
+    right_start = _month_index(right.start_date)
+    if left_start is None or right_start is None:
+        return False
+
+    left_end = _month_index(left.end_date) if left.end_date else 999999
+    right_end = _month_index(right.end_date) if right.end_date else 999999
+    if left_end is None or right_end is None:
+        return False
+
+    return left_start <= right_end and right_start <= left_end
+
+
+def _month_index(value: str | None) -> int | None:
+    if not value:
+        return None
+    parts = value.split("-")
+    if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
+        return None
+    return int(parts[0]) * 12 + int(parts[1])
 
 
 def _check_surge_conditions(volume_data: dict[str, Any]) -> dict[str, bool | int]:
