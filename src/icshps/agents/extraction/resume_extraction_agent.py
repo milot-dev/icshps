@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+from icshps.agents.extraction.education_extractor import (
+    extract_education_records,
+)
 from icshps.agents.extraction.employment_history_extractor import (
     extract_employment_history,
 )
@@ -15,13 +18,14 @@ from icshps.agents.extraction.synthetic_profile_fallback import (
 from icshps.schemas import (
     CandidateProfile,
     ConfidenceBand,
+    EducationRecord,
     EmploymentRecord,
     ExtractedField,
     ExtractionError,
     SkillRecord,
     EvidenceRef,
 )
-from icshps.schemas.profile import CertificationRecord, EducationRecord
+from icshps.schemas.profile import CertificationRecord
 
 EMAIL_RE = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
@@ -109,7 +113,11 @@ def extract_candidate_profile(
         location = extract_location(lines, source_path)
         skills = extract_skills(normalized_text, source_path)
         certifications = extract_certifications(normalized_text, source_path)
-        education = extract_education(lines, source_path)
+        education = extract_education_records(
+            lines,
+            source_path,
+            make_education_evidence,
+        )
         employment_history = extract_employment_history(
             lines,
             source_path,
@@ -372,84 +380,6 @@ def extract_certifications(text: str, source_path: Path) -> list[CertificationRe
             )
 
     return certs
-
-
-def extract_education(lines: list[str], source_path: Path) -> list[EducationRecord]:
-    education: list[EducationRecord] = []
-    in_education_section = False
-
-    for line in lines:
-        lowered = line.lower().strip()
-
-        if lowered in {"education", "academic background", "education background"}:
-            in_education_section = True
-            continue
-
-        if in_education_section and lowered in {
-            "skills",
-            "experience",
-            "work experience",
-            "professional experience",
-            "employment",
-            "certifications",
-        }:
-            break
-
-        if not in_education_section:
-            continue
-
-        record = parse_education_line(line, source_path, len(education))
-        if record is not None:
-            education.append(record)
-
-    return education
-
-
-def parse_education_line(
-    line: str,
-    source_path: Path,
-    education_index: int,
-) -> EducationRecord | None:
-    degree_keywords = (
-        "Bachelor",
-        "BSc",
-        "BS",
-        "Master",
-        "MSc",
-        "MS",
-        "PhD",
-        "Doctorate",
-        "Diploma",
-        "Certificate",
-    )
-
-    if not any(keyword.lower() in line.lower() for keyword in degree_keywords):
-        return None
-
-    parts = [part.strip() for part in re.split(r"\s+-\s+|,", line) if part.strip()]
-    if len(parts) < 2:
-        return None
-
-    degree = parts[0]
-    institution = parts[1]
-    year_matches = re.findall(r"(?:19|20)\d{2}", line)
-
-    return EducationRecord(
-        institution=institution,
-        degree=degree,
-        start_year=int(year_matches[0]) if len(year_matches) > 1 else None,
-        end_year=int(year_matches[-1]) if year_matches else None,
-        confidence=EDUCATION_CONFIDENCE,
-        evidence=[
-            make_education_evidence(
-                source_path,
-                education_index,
-                line,
-                EDUCATION_CONFIDENCE,
-            )
-        ],
-    )
-
 
 def build_extraction_errors(
     *,
@@ -715,7 +645,7 @@ def make_education_evidence(
         "education",
         snippet,
         confidence,
-        evidence_id=f"ev_education_{education_index}_degree_001",
+        evidence_id=f"ev_education_{education_index}_record_001",
         field_path=f"education[{education_index}]",
     )
 

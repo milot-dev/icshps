@@ -93,12 +93,12 @@ def test_extract_candidate_profile_extracts_education_records():
     assert education.degree == "Bachelor of Science in Computer Science"
     assert education.institution == "University of Prishtina"
     assert education.end_year == 2018
-    assert education.confidence == 0.7
-    assert education.evidence[0].evidence_id == "ev_education_0_degree_001"
+    assert education.confidence == 0.78
+    assert education.evidence[0].evidence_id == "ev_education_0_record_001"
     assert education.evidence[0].field_path == "education[0]"
     assert education.evidence[0].section == "education"
     assert education.evidence[0] in profile.evidence_index
-    assert profile.section_confidence["education"] == 0.7
+    assert profile.section_confidence["education"] == 0.78
     assert profile.section_confidence_bands["education"] == "medium"
 
 
