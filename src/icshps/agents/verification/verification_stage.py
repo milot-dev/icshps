@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from icshps.agents.verification.credential_verification_agent import (
+    build_credential_verification_findings,
+)
+from icshps.agents.verification.mandatory_certification_check import (
     build_mandatory_certification_findings,
 )
-from icshps.schemas import BundleContext, CandidateProfile
+from icshps.schemas import BundleContext, CandidateProfile, FindingsArtifact
 from icshps.services import (
-    RunScaffold,
     AgentStageResult,
+    RunScaffold,
     read_json_artifact,
     write_json_artifact,
 )
@@ -36,11 +39,19 @@ def run_verification_stage(
 
     try:
         candidate_profile = CandidateProfile.model_validate(profile_payload)
-        artifact = build_mandatory_certification_findings(
-            run_id=scaffold.run_id,
-            candidate_profile=candidate_profile,
-            skills_matrix_path=context.required_inputs.skills_matrix,
-        )
+        findings: list = [
+            *build_mandatory_certification_findings(
+                run_id=scaffold.run_id,
+                candidate_profile=candidate_profile,
+                skills_matrix_path=context.required_inputs.skills_matrix,
+            ).findings,
+            *build_credential_verification_findings(
+                run_id=scaffold.run_id,
+                candidate_profile=candidate_profile,
+                credential_evidence_path=context.optional_inputs.credential_evidence,
+            ).findings,
+        ]
+        artifact = FindingsArtifact(run_id=scaffold.run_id, findings=findings)
 
     except Exception as exc:
         return AgentStageResult(
@@ -48,8 +59,8 @@ def run_verification_stage(
             created_artifacts=(),
             skipped_stages=("verification_findings",),
             warnings=(
-                "Verification stage skipped after controlled certification check "
-                f"error: {exc}",
+                "Verification stage skipped after controlled verification error: "
+                f"{exc}",
             ),
         )
 
