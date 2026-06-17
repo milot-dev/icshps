@@ -12,6 +12,7 @@ from icshps.agents.extraction.employment_history_extractor import (
 from icshps.agents.extraction.pdf_bounding_boxes import find_text_bounding_box
 from icshps.agents.extraction.synthetic_profile_fallback import (
     build_synthetic_candidate_profile,
+    fallback_reason_for_trigger,
     should_use_synthetic_fallback,
 )
 from icshps.schemas import (
@@ -59,6 +60,7 @@ EXPLICIT_LOCATION_CONFIDENCE = 0.70
 INFERRED_LOCATION_CONFIDENCE = 0.60
 SKILL_CONFIDENCE = 0.80
 CERTIFICATION_CONFIDENCE = 0.75
+EDUCATION_CONFIDENCE = 0.70
 MISSING_CONFIDENCE = 0.0
 
 CONTACT_CONFIDENCE_WEIGHT = 0.70
@@ -81,58 +83,68 @@ def extract_candidate_profile(
     source_path = Path(str(source_file))
 
     if should_use_synthetic_fallback(extracted_text=normalized_text):
+        trigger = "resume_text_empty" if not normalized_text else "resume_text_too_short"
         return build_synthetic_candidate_profile(
             candidate_id=candidate_id,
             application_id=application_id,
             role_id=role_id,
             source_file=source_file,
-            reason="Resume extraction returned empty text.",
+            reason=fallback_reason_for_trigger(trigger),
         )
 
-    lines = normalized_text.splitlines()
-    full_name = extract_full_name(lines, source_path)
+    try:
+        lines = normalized_text.splitlines()
+        full_name = extract_full_name(lines, source_path)
 
-    if should_use_synthetic_fallback(
-        extracted_text=normalized_text,
-        missing_required_fields=full_name.value is None,
-    ):
+        if should_use_synthetic_fallback(
+            extracted_text=normalized_text,
+            missing_required_fields=full_name.value is None,
+        ):
+            return build_synthetic_candidate_profile(
+                candidate_id=candidate_id,
+                application_id=application_id,
+                role_id=role_id,
+                source_file=source_file,
+                reason=fallback_reason_for_trigger("missing_required_profile_fields"),
+            )
+
+        email = extract_regex_field(EMAIL_RE, normalized_text, source_path, EMAIL_CONFIDENCE)
+        phone = extract_regex_field(PHONE_RE, normalized_text, source_path, PHONE_CONFIDENCE)
+        location = extract_location(lines, source_path)
+        skills = extract_skills(normalized_text, source_path)
+        certifications = extract_certifications(normalized_text, source_path)
+        education = extract_education_records(
+            lines,
+            source_path,
+            make_education_evidence,
+        )
+        employment_history = extract_employment_history(
+            lines,
+            source_path,
+            make_employment_evidence,
+        )
+        extraction_errors = build_extraction_errors(email=email, phone=phone)
+        section_confidence = calculate_section_confidence(
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            location=location,
+            skills=skills,
+            certifications=certifications,
+            education=education,
+            employment_history=employment_history,
+        )
+        extraction_confidence = calculate_profile_confidence(section_confidence)
+        section_confidence_bands = calculate_section_confidence_bands(section_confidence)
+        manual_review_flags = [error.message for error in extraction_errors]
+    except Exception as exc:
         return build_synthetic_candidate_profile(
             candidate_id=candidate_id,
             application_id=application_id,
             role_id=role_id,
             source_file=source_file,
-            reason="Required candidate name could not be extracted.",
+            reason=f"{fallback_reason_for_trigger('profile_extraction_failed')} {exc}",
         )
-
-    email = extract_regex_field(EMAIL_RE, normalized_text, source_path, EMAIL_CONFIDENCE)
-    phone = extract_regex_field(PHONE_RE, normalized_text, source_path, PHONE_CONFIDENCE)
-    location = extract_location(lines, source_path)
-    skills = extract_skills(normalized_text, source_path)
-    certifications = extract_certifications(normalized_text, source_path)
-    education = extract_education_records(
-        lines,
-        source_path,
-        make_education_evidence,
-    )
-    employment_history = extract_employment_history(
-        lines,
-        source_path,
-        make_employment_evidence,
-    )
-    extraction_errors = build_extraction_errors(email=email, phone=phone)
-    section_confidence = calculate_section_confidence(
-        full_name=full_name,
-        email=email,
-        phone=phone,
-        location=location,
-        skills=skills,
-        certifications=certifications,
-        education=education,
-        employment_history=employment_history,
-    )
-    extraction_confidence = calculate_profile_confidence(section_confidence)
-    section_confidence_bands = calculate_section_confidence_bands(section_confidence)
-    manual_review_flags = [error.message for error in extraction_errors]
 
     if extraction_confidence < LOW_EXTRACTION_CONFIDENCE_THRESHOLD:
         manual_review_flags.append(LOW_CONFIDENCE_REVIEW_FLAG)
@@ -368,7 +380,6 @@ def extract_certifications(text: str, source_path: Path) -> list[CertificationRe
             )
 
     return certs
-
 
 def build_extraction_errors(
     *,
