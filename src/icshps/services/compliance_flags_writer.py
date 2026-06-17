@@ -53,7 +53,13 @@ def write_compliance_flags_md(path: Path, artifact: FindingsArtifact) -> None:
 def _filter_relevant_findings(findings: list[Finding]) -> list[Finding]:
     relevant: list[Finding] = []
     for finding in findings:
-        if _is_eeo_finding(finding) or _is_mandatory_certification_finding(finding):
+        if (
+            _is_eeo_finding(finding)
+            or _is_mandatory_certification_finding(finding)
+            or _is_credential_finding(finding)
+            or _is_anomaly_finding(finding)
+            or _is_routing_finding(finding)
+        ):
             relevant.append(finding)
     return sorted(relevant, key=_finding_sort_key)
 
@@ -74,17 +80,41 @@ def _is_mandatory_certification_finding(finding: Finding) -> bool:
     )
 
 
+def _is_credential_finding(finding: Finding) -> bool:
+    return finding.category == FindingCategory.CREDENTIAL
+
+
+def _is_anomaly_finding(finding: Finding) -> bool:
+    return (
+        finding.category == FindingCategory.ANOMALY
+        or finding.category == FindingCategory.LINKEDIN_CONSISTENCY
+    )
+
+
+def _is_routing_finding(finding: Finding) -> bool:
+    return finding.category == FindingCategory.TRIAGE
+
+
 def _group_findings(findings: list[Finding]) -> dict[str, list[Finding]]:
     groups: dict[str, list[Finding]] = {
         "EEO compliance findings": [],
         "Mandatory certification findings": [],
+        "Credential verification summary": [],
+        "Anomaly summary": [],
+        "Routing recommendation summary": [],
     }
 
     for finding in findings:
         if _is_mandatory_certification_finding(finding):
             groups["Mandatory certification findings"].append(finding)
-        else:
+        elif _is_eeo_finding(finding):
             groups["EEO compliance findings"].append(finding)
+        elif _is_credential_finding(finding):
+            groups["Credential verification summary"].append(finding)
+        elif _is_anomaly_finding(finding):
+            groups["Anomaly summary"].append(finding)
+        elif _is_routing_finding(finding):
+            groups["Routing recommendation summary"].append(finding)
 
     return {name: groups[name] for name in groups if groups[name]}
 

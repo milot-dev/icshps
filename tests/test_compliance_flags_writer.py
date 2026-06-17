@@ -82,6 +82,69 @@ def test_build_compliance_flags_markdown_renders_eeo_and_certification_findings(
     assert "skills_matrix:mandatory_certifications" in content
 
 
+def test_compliance_flags_markdown_includes_credential_anomaly_and_routing_summaries() -> None:
+    credential_finding = Finding(
+        id="credential-education-pending-001",
+        source_agent="credential_verification_agent_v1",
+        category=FindingCategory.CREDENTIAL,
+        severity=Severity.WARNING,
+        title="International degree pending verification",
+        description="Education credential needs mock registry verification.",
+        reason="International education requires pending verification.",
+        recommendation="Route to pending credential verification.",
+        evidence=[
+            EvidenceRef(
+                source_path=Path("credential_evidence.yaml"),
+                source_type="mock_credential_evidence",
+                section="education",
+                text_snippet="International Technical University",
+            )
+        ],
+    )
+    anomaly_finding = Finding(
+        id="anomaly-multi-role-001",
+        source_agent="anomaly_detection_agent_v1",
+        category=FindingCategory.ANOMALY,
+        severity=Severity.WARNING,
+        title="Candidate applied to multiple roles",
+        description="Candidate appears across three roles.",
+        reason="Multi-role applications require reviewer grouping.",
+        recommendation="Route to duplicate / multi-role review.",
+        evidence=[
+            EvidenceRef(
+                source_path=Path("application_history.yaml"),
+                source_type="mock_application_history",
+                section="applications",
+                text_snippet="job_backend, job_ml, job_data",
+            )
+        ],
+    )
+    routing_finding = Finding(
+        id="triage-routing-001",
+        source_agent="exception_triage_agent_v1",
+        category=FindingCategory.TRIAGE,
+        severity=Severity.INFO,
+        title="Routing recommendation",
+        description="Pending credential verification. Human approval required.",
+        reason="Credential finding requires reviewer routing.",
+        recommendation="Pending credential verification; human approval required.",
+    )
+
+    content = build_compliance_flags_markdown(
+        FindingsArtifact(
+            run_id="run123",
+            findings=[credential_finding, anomaly_finding, routing_finding],
+        )
+    )
+
+    assert "## Credential verification summary" in content
+    assert "## Anomaly summary" in content
+    assert "## Routing recommendation summary" in content
+    assert "International degree pending verification" in content
+    assert "Candidate applied to multiple roles" in content
+    assert "human approval required" in content.lower()
+
+
 def test_write_compliance_flags_md_writes_file(tmp_path: Path) -> None:
     artifact = FindingsArtifact(run_id="run123", findings=[])
     output_path = tmp_path / "compliance_flags.md"
