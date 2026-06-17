@@ -14,6 +14,8 @@ from icshps.schemas import (
     CandidateProfile,
     ExtractedField,
     FinalDecisionArtifact,
+    Finding,
+    FindingCategory,
     JobInfo,
     MatchResultsArtifact,
     OptionalInputPaths,
@@ -21,6 +23,7 @@ from icshps.schemas import (
     RoutingCategory,
     RunArtifactManifest,
     ScenarioInfo,
+    Severity,
 )
 from icshps.services import prepare_run_scaffold, write_json_artifact
 from icshps.services.final_artifacts import SHORTLIST_COLUMNS, write_final_run_artifacts
@@ -113,12 +116,76 @@ def test_metrics_include_routing_counts(tmp_path: Path) -> None:
     payload = read_json(scaffold.artifacts_dir / "metrics.json")
 
     assert payload["candidate_count"] == 1
+    assert payload["total_candidates"] == 1
     assert payload["finding_count"] == 1
     assert payload["blocking_finding_count"] == 1
     assert payload["routing_counts"] == {
         "Recommended rejection — human approval required": 1
     }
+    assert payload["routing_category_counts"] == payload["routing_counts"]
+    assert payload["avg_confidence_for_manual_review"] == 100.0
     assert payload["deterministic"] is True
+
+
+def test_metrics_include_compliance_credential_and_anomaly_counts(tmp_path: Path) -> None:
+    scaffold = scaffold_with_inputs(tmp_path)
+    final_decision = FinalDecisionArtifact(
+        run_id=scaffold.run_id,
+        bundle_id="bundle_001",
+        scenario_type="combined",
+        decisions=[
+            {
+                "candidate_id": "candidate_001",
+                "application_id": "app_001",
+                "routing_category": RoutingCategory.EEO_COMPLIANCE_REVIEW,
+                "reason": "EEO compliance review. Human approval is required.",
+                "score": 72.0,
+                "blocking_finding_ids": [],
+                "requires_human_approval": True,
+            }
+        ],
+        findings=[
+            Finding(
+                id="eeo-001",
+                source_agent="eeo_compliance_agent_v1",
+                category=FindingCategory.COMPLIANCE,
+                severity=Severity.WARNING,
+                title="Age-specific job description language",
+                description="Risky JD language detected.",
+                candidate_id="candidate_001",
+                application_id="app_001",
+            ),
+            Finding(
+                id="credential-001",
+                source_agent="credential_verification_agent_v1",
+                category=FindingCategory.CREDENTIAL,
+                severity=Severity.WARNING,
+                title="Credential needs verification",
+                description="Credential issue detected.",
+                candidate_id="candidate_001",
+                application_id="app_001",
+            ),
+            Finding(
+                id="anomaly-001",
+                source_agent="anomaly_detection_agent_v1",
+                category=FindingCategory.ANOMALY,
+                severity=Severity.WARNING,
+                title="Candidate applied to multiple roles",
+                description="Anomaly detected.",
+                candidate_id="candidate_001",
+                application_id="app_001",
+            ),
+        ],
+    )
+
+    write_final_run_artifacts(scaffold=scaffold, final_decision=final_decision)
+
+    payload = read_json(scaffold.artifacts_dir / "metrics.json")
+
+    assert payload["candidates_with_compliance_flags"] == 1
+    assert payload["candidates_with_credential_issues"] == 1
+    assert payload["candidates_with_anomalies"] == 1
+    assert payload["routing_category_counts"] == {"EEO compliance review": 1}
 
 
 def test_audit_log_includes_routing_summary_and_human_approval_reminder(

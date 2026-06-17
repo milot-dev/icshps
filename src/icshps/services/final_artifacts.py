@@ -216,19 +216,44 @@ def write_metrics(
     routing_counts = Counter(
         decision.routing_category.value for decision in final_decision.decisions
     )
+    total_candidates = len(context.candidates) if context else len(final_decision.decisions)
     blocking_finding_count = sum(
         1 for finding in final_decision.findings if finding.severity == Severity.BLOCKING
     )
+    manual_review_decisions = [
+        decision
+        for decision in final_decision.decisions
+        if _is_manual_review_routing(decision.routing_category)
+    ]
 
     payload: dict[str, Any] = {
         "run_id": final_decision.run_id,
         "bundle_id": final_decision.bundle_id,
         "scenario_type": final_decision.scenario_type,
-        "candidate_count": len(context.candidates) if context else len(final_decision.decisions),
+        "candidate_count": total_candidates,
+        "total_candidates": total_candidates,
         "decision_count": len(final_decision.decisions),
         "finding_count": len(final_decision.findings),
         "blocking_finding_count": blocking_finding_count,
         "routing_counts": dict(sorted(routing_counts.items())),
+        "routing_category_counts": dict(sorted(routing_counts.items())),
+        "candidates_with_compliance_flags": _candidate_count_with_category(
+            final_decision=final_decision,
+            categories={"compliance"},
+        ),
+        "candidates_with_credential_issues": _candidate_count_with_category(
+            final_decision=final_decision,
+            categories={"credential", "matching"},
+            title_tokens=("certification", "credential"),
+        ),
+        "candidates_with_anomalies": _candidate_count_with_category(
+            final_decision=final_decision,
+            categories={"anomaly", "linkedin_consistency"},
+        ),
+        "avg_confidence_for_manual_review": _manual_review_percentage(
+            manual_review_count=len(manual_review_decisions),
+            total_candidates=total_candidates,
+        ),
         "artifacts_created": [
             "artifacts/final_decision.json",
             "artifacts/shortlist.csv",
@@ -481,3 +506,41 @@ def _render_finding_line(finding: Any) -> str:
         f"- `{finding.id}` [{finding.severity.value}] "
         f"{finding.title} — candidate: `{candidate}`, application: `{application}`"
     )
+
+
+def _is_manual_review_routing(category: RoutingCategory) -> bool:
+    return category in {
+        RoutingCategory.MANUAL_REVIEW,
+        RoutingCategory.CREDENTIAL_VERIFICATION_PENDING,
+        RoutingCategory.EMPLOYMENT_HISTORY_INCONSISTENCY,
+        RoutingCategory.DUPLICATE_MULTI_ROLE_REVIEW,
+        RoutingCategory.EEO_COMPLIANCE_REVIEW,
+        RoutingCategory.RECOMMENDED_REJECTION_HUMAN_APPROVAL,
+    }
+
+
+def _manual_review_percentage(*, manual_review_count: int, total_candidates: int) -> float:
+    if total_candidates == 0:
+        return 0.0
+    return round((manual_review_count / total_candidates) * 100.0, 2)
+
+
+def _candidate_count_with_category(
+    *,
+    final_decision: FinalDecisionArtifact,
+    categories: set[str],
+    title_tokens: tuple[str, ...] = (),
+) -> int:
+    candidate_ids: set[str] = set()
+
+    for finding in final_decision.findings:
+        category = finding.category.value
+        title = (finding.title or "").lower()
+        if category not in categories:
+            continue
+        if title_tokens and not any(token in title for token in title_tokens):
+            continue
+        if finding.candidate_id:
+            candidate_ids.add(finding.candidate_id)
+
+    return len(candidate_ids)
