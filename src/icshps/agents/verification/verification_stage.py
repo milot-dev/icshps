@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from icshps.agents.verification.credential_verification_agent import (
+    build_credential_verification_findings,
     build_mandatory_certification_findings,
 )
 from icshps.schemas import BundleContext, CandidateProfile
@@ -36,11 +37,18 @@ def run_verification_stage(
 
     try:
         candidate_profile = CandidateProfile.model_validate(profile_payload)
-        artifact = build_mandatory_certification_findings(
+        mandatory_artifact = build_mandatory_certification_findings(
             run_id=scaffold.run_id,
             candidate_profile=candidate_profile,
             skills_matrix_path=context.required_inputs.skills_matrix,
         )
+        credential_artifact = build_credential_verification_findings(
+            run_id=scaffold.run_id,
+            candidate_profile=candidate_profile,
+            credential_evidence_path=context.optional_inputs.credential_evidence,
+        )
+        mandatory_artifact.findings.extend(credential_artifact.findings)
+        artifact = mandatory_artifact
 
     except Exception as exc:
         return AgentStageResult(
