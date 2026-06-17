@@ -9,6 +9,7 @@ from icshps.agents.extraction.employment_history_extractor import (
 from icshps.agents.extraction.pdf_bounding_boxes import find_text_bounding_box
 from icshps.agents.extraction.synthetic_profile_fallback import (
     build_synthetic_candidate_profile,
+    fallback_reason_for_trigger,
     should_use_synthetic_fallback,
 )
 from icshps.schemas import (
@@ -20,7 +21,7 @@ from icshps.schemas import (
     SkillRecord,
     EvidenceRef,
 )
-from icshps.schemas.profile import CertificationRecord
+from icshps.schemas.profile import CertificationRecord, EducationRecord
 
 EMAIL_RE = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
@@ -55,6 +56,7 @@ EXPLICIT_LOCATION_CONFIDENCE = 0.70
 INFERRED_LOCATION_CONFIDENCE = 0.60
 SKILL_CONFIDENCE = 0.80
 CERTIFICATION_CONFIDENCE = 0.75
+EDUCATION_CONFIDENCE = 0.70
 MISSING_CONFIDENCE = 0.0
 
 CONTACT_CONFIDENCE_WEIGHT = 0.70
@@ -77,52 +79,64 @@ def extract_candidate_profile(
     source_path = Path(str(source_file))
 
     if should_use_synthetic_fallback(extracted_text=normalized_text):
+        trigger = "resume_text_empty" if not normalized_text else "resume_text_too_short"
         return build_synthetic_candidate_profile(
             candidate_id=candidate_id,
             application_id=application_id,
             role_id=role_id,
             source_file=source_file,
-            reason="Resume extraction returned empty text.",
+            reason=fallback_reason_for_trigger(trigger),
         )
 
-    lines = normalized_text.splitlines()
-    full_name = extract_full_name(lines, source_path)
+    try:
+        lines = normalized_text.splitlines()
+        full_name = extract_full_name(lines, source_path)
 
-    if should_use_synthetic_fallback(
-        extracted_text=normalized_text,
-        missing_required_fields=full_name.value is None,
-    ):
+        if should_use_synthetic_fallback(
+            extracted_text=normalized_text,
+            missing_required_fields=full_name.value is None,
+        ):
+            return build_synthetic_candidate_profile(
+                candidate_id=candidate_id,
+                application_id=application_id,
+                role_id=role_id,
+                source_file=source_file,
+                reason=fallback_reason_for_trigger("missing_required_profile_fields"),
+            )
+
+        email = extract_regex_field(EMAIL_RE, normalized_text, source_path, EMAIL_CONFIDENCE)
+        phone = extract_regex_field(PHONE_RE, normalized_text, source_path, PHONE_CONFIDENCE)
+        location = extract_location(lines, source_path)
+        skills = extract_skills(normalized_text, source_path)
+        certifications = extract_certifications(normalized_text, source_path)
+        education = extract_education(lines, source_path)
+        employment_history = extract_employment_history(
+            lines,
+            source_path,
+            make_employment_evidence,
+        )
+        extraction_errors = build_extraction_errors(email=email, phone=phone)
+        section_confidence = calculate_section_confidence(
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            location=location,
+            skills=skills,
+            certifications=certifications,
+            education=education,
+            employment_history=employment_history,
+        )
+        extraction_confidence = calculate_profile_confidence(section_confidence)
+        section_confidence_bands = calculate_section_confidence_bands(section_confidence)
+        manual_review_flags = [error.message for error in extraction_errors]
+    except Exception as exc:
         return build_synthetic_candidate_profile(
             candidate_id=candidate_id,
             application_id=application_id,
             role_id=role_id,
             source_file=source_file,
-            reason="Required candidate name could not be extracted.",
+            reason=f"{fallback_reason_for_trigger('profile_extraction_failed')} {exc}",
         )
-
-    email = extract_regex_field(EMAIL_RE, normalized_text, source_path, EMAIL_CONFIDENCE)
-    phone = extract_regex_field(PHONE_RE, normalized_text, source_path, PHONE_CONFIDENCE)
-    location = extract_location(lines, source_path)
-    skills = extract_skills(normalized_text, source_path)
-    certifications = extract_certifications(normalized_text, source_path)
-    employment_history = extract_employment_history(
-        lines,
-        source_path,
-        make_employment_evidence,
-    )
-    extraction_errors = build_extraction_errors(email=email, phone=phone)
-    section_confidence = calculate_section_confidence(
-        full_name=full_name,
-        email=email,
-        phone=phone,
-        location=location,
-        skills=skills,
-        certifications=certifications,
-        employment_history=employment_history,
-    )
-    extraction_confidence = calculate_profile_confidence(section_confidence)
-    section_confidence_bands = calculate_section_confidence_bands(section_confidence)
-    manual_review_flags = [error.message for error in extraction_errors]
 
     if extraction_confidence < LOW_EXTRACTION_CONFIDENCE_THRESHOLD:
         manual_review_flags.append(LOW_CONFIDENCE_REVIEW_FLAG)
@@ -133,6 +147,7 @@ def extract_candidate_profile(
         phone=phone,
         location=location,
         skills=skills,
+        education=education,
         employment_history=employment_history,
     ):
         manual_review_flags.append(MISSING_EVIDENCE_REVIEW_FLAG)
@@ -149,7 +164,7 @@ def extract_candidate_profile(
         skills=skills,
         certifications=certifications,
         employment_history=employment_history,
-        education=[],
+        education=education,
         total_years_experience_estimate=None,
         relevant_years_experience_estimate=None,
         extraction_confidence=extraction_confidence,
@@ -163,6 +178,7 @@ def extract_candidate_profile(
             location=location,
             skills=skills,
             certifications=certifications,
+            education=education,
             employment_history=employment_history,
         ),
         manual_review_flags=manual_review_flags,
@@ -358,6 +374,83 @@ def extract_certifications(text: str, source_path: Path) -> list[CertificationRe
     return certs
 
 
+def extract_education(lines: list[str], source_path: Path) -> list[EducationRecord]:
+    education: list[EducationRecord] = []
+    in_education_section = False
+
+    for line in lines:
+        lowered = line.lower().strip()
+
+        if lowered in {"education", "academic background", "education background"}:
+            in_education_section = True
+            continue
+
+        if in_education_section and lowered in {
+            "skills",
+            "experience",
+            "work experience",
+            "professional experience",
+            "employment",
+            "certifications",
+        }:
+            break
+
+        if not in_education_section:
+            continue
+
+        record = parse_education_line(line, source_path, len(education))
+        if record is not None:
+            education.append(record)
+
+    return education
+
+
+def parse_education_line(
+    line: str,
+    source_path: Path,
+    education_index: int,
+) -> EducationRecord | None:
+    degree_keywords = (
+        "Bachelor",
+        "BSc",
+        "BS",
+        "Master",
+        "MSc",
+        "MS",
+        "PhD",
+        "Doctorate",
+        "Diploma",
+        "Certificate",
+    )
+
+    if not any(keyword.lower() in line.lower() for keyword in degree_keywords):
+        return None
+
+    parts = [part.strip() for part in re.split(r"\s+-\s+|,", line) if part.strip()]
+    if len(parts) < 2:
+        return None
+
+    degree = parts[0]
+    institution = parts[1]
+    year_matches = re.findall(r"(?:19|20)\d{2}", line)
+
+    return EducationRecord(
+        institution=institution,
+        degree=degree,
+        start_year=int(year_matches[0]) if len(year_matches) > 1 else None,
+        end_year=int(year_matches[-1]) if year_matches else None,
+        confidence=EDUCATION_CONFIDENCE,
+        evidence=[
+            make_education_evidence(
+                source_path,
+                education_index,
+                line,
+                EDUCATION_CONFIDENCE,
+            )
+        ],
+    )
+
+
 def build_extraction_errors(
     *,
     email: ExtractedField | None,
@@ -383,6 +476,7 @@ def calculate_section_confidence(
     location: ExtractedField | None,
     skills: list[SkillRecord],
     certifications: list[CertificationRecord] | None = None,
+    education: list[EducationRecord] | None = None,
     employment_history: list[EmploymentRecord] | None = None,
 ) -> dict[str, float]:
     return {
@@ -400,7 +494,9 @@ def calculate_section_confidence(
             if employment_history
             else []
         ),
-        "education": MISSING_CONFIDENCE,
+        "education": average_confidence(
+            [record.confidence for record in education] if education else []
+        ),
         "certifications": average_confidence(
             [c.confidence for c in certifications] if certifications else []
         ),
@@ -450,6 +546,7 @@ def has_extracted_values_missing_evidence(
     phone: ExtractedField | None,
     location: ExtractedField | None,
     skills: list[SkillRecord],
+    education: list[EducationRecord] | None = None,
     employment_history: list[EmploymentRecord] | None = None,
 ) -> bool:
     fields = [full_name, email, phone, location]
@@ -459,6 +556,9 @@ def has_extracted_values_missing_evidence(
             return True
 
     if any(skill.name and not skill.evidence for skill in skills):
+        return True
+
+    if any(record.institution and not record.evidence for record in education or []):
         return True
 
     return any(
@@ -475,6 +575,7 @@ def build_evidence_index(
     location: ExtractedField | None,
     skills: list[SkillRecord],
     certifications: list[CertificationRecord] | None = None,
+    education: list[EducationRecord] | None = None,
     employment_history: list[EmploymentRecord] | None = None,
 ) -> list[EvidenceRef]:
     evidence_refs: list[EvidenceRef] = []
@@ -485,6 +586,10 @@ def build_evidence_index(
 
     for skill in skills:
         evidence_refs.extend(skill.evidence)
+
+    if education:
+        for education_record in education:
+            evidence_refs.extend(education_record.evidence)
 
     if employment_history:
         for employment_record in employment_history:
@@ -596,6 +701,22 @@ def make_certification_evidence(
         confidence,
         evidence_id=f"ev_certification_{cert_index}_name_001",
         field_path=f"certifications[{cert_index}].name",
+    )
+
+
+def make_education_evidence(
+    source_path: Path,
+    education_index: int,
+    snippet: str,
+    confidence: float,
+) -> EvidenceRef:
+    return make_evidence(
+        source_path,
+        "education",
+        snippet,
+        confidence,
+        evidence_id=f"ev_education_{education_index}_degree_001",
+        field_path=f"education[{education_index}]",
     )
 
 

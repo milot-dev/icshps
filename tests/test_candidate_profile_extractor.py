@@ -30,6 +30,17 @@ Skills
 Python, SQL
 """
 
+SAMPLE_EDUCATION_RESUME_TEXT = """
+Sam Rivera
+sam.rivera@example.com
+
+Education
+Bachelor of Science in Computer Science, University of Prishtina, 2018
+
+Skills
+Python, SQL
+"""
+
 
 def test_extract_candidate_profile_returns_schema_valid_profile():
     profile = extract_candidate_profile(
@@ -66,6 +77,29 @@ def test_extract_candidate_profile_extracts_basic_fields_and_skills():
     assert profile.education == []
     assert profile.employment_history == []
     assert profile.certifications == []
+
+
+def test_extract_candidate_profile_extracts_education_records():
+    profile = extract_candidate_profile(
+        SAMPLE_EDUCATION_RESUME_TEXT,
+        candidate_id="cand_education",
+        application_id="app_education",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert len(profile.education) == 1
+    education = profile.education[0]
+    assert education.degree == "Bachelor of Science in Computer Science"
+    assert education.institution == "University of Prishtina"
+    assert education.end_year == 2018
+    assert education.confidence == 0.7
+    assert education.evidence[0].evidence_id == "ev_education_0_degree_001"
+    assert education.evidence[0].field_path == "education[0]"
+    assert education.evidence[0].section == "education"
+    assert education.evidence[0] in profile.evidence_index
+    assert profile.section_confidence["education"] == 0.7
+    assert profile.section_confidence_bands["education"] == "medium"
 
 
 def test_extract_candidate_profile_extracts_employment_history_records():
@@ -332,6 +366,20 @@ def test_extract_candidate_profile_uses_fallback_for_empty_text():
     assert profile.extraction_errors[0].code == "SYNTHETIC_FALLBACK_USED"
 
 
+def test_extract_candidate_profile_uses_fallback_for_too_short_text():
+    profile = extract_candidate_profile(
+        "Jane Doe",
+        candidate_id="cand_short",
+        application_id="app_short",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert profile.synthetic_fallback_used is True
+    assert profile.full_name.value == "Unknown Candidate"
+    assert "too short" in profile.manual_review_flags[1]
+
+
 def test_extract_candidate_profile_uses_fallback_when_name_is_missing():
     profile = extract_candidate_profile(
         "jane.doe@example.com\nPython\nSQL",
@@ -343,7 +391,30 @@ def test_extract_candidate_profile_uses_fallback_when_name_is_missing():
 
     assert profile.synthetic_fallback_used is True
     assert profile.full_name.value == "Unknown Candidate"
-    assert "Required candidate name" in profile.manual_review_flags[1]
+    assert "Required candidate profile fields" in profile.manual_review_flags[1]
+
+
+def test_extract_candidate_profile_uses_fallback_when_extraction_fails(monkeypatch):
+    def fail_skill_extraction(text, source_path):
+        raise RuntimeError("skill parser failed")
+
+    monkeypatch.setattr(
+        resume_extraction_agent,
+        "extract_skills",
+        fail_skill_extraction,
+    )
+
+    profile = resume_extraction_agent.extract_candidate_profile(
+        SAMPLE_RESUME_TEXT,
+        candidate_id="cand_failed",
+        application_id="app_failed",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert profile.synthetic_fallback_used is True
+    assert profile.full_name.value == "Unknown Candidate"
+    assert "Candidate profile extraction failed." in profile.manual_review_flags[1]
 
 
 def test_extract_candidate_profile_is_deterministic():

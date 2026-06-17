@@ -5,6 +5,16 @@ from pathlib import Path
 from icshps.schemas.common import EvidenceRef
 from icshps.schemas.profile import CandidateProfile, ExtractedField, ExtractionError
 
+MIN_USABLE_RESUME_TEXT_LENGTH = 12
+
+FALLBACK_REASONS = {
+    "resume_text_empty": "Resume extraction returned empty text.",
+    "resume_text_too_short": "Resume extraction returned text that is too short to use.",
+    "profile_extraction_failed": "Candidate profile extraction failed.",
+    "missing_required_profile_fields": "Required candidate profile fields could not be extracted.",
+    "image_based_resume_detected": "Resume appears to be image-based or scanned; OCR is out of scope.",
+}
+
 
 def build_synthetic_candidate_profile(
     *,
@@ -84,14 +94,22 @@ def should_use_synthetic_fallback(
     extracted_text: str | None = None,
     extraction_failed: bool = False,
     missing_required_fields: bool = False,
+    image_based_resume_detected: bool = False,
 ) -> bool:
-    if extraction_failed:
+    if extraction_failed or image_based_resume_detected:
         return True
 
     if extracted_text is None or not extracted_text.strip():
+        return True
+
+    if len(extracted_text.strip()) < MIN_USABLE_RESUME_TEXT_LENGTH:
         return True
 
     if missing_required_fields:
         return True
 
     return False
+
+
+def fallback_reason_for_trigger(trigger: str) -> str:
+    return FALLBACK_REASONS.get(trigger, FALLBACK_REASONS["profile_extraction_failed"])

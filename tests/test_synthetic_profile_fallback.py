@@ -10,10 +10,21 @@ def test_empty_text_requires_synthetic_fallback():
     assert should_use_synthetic_fallback(extracted_text="   ") is True
 
 
+def test_too_short_text_requires_synthetic_fallback():
+    assert should_use_synthetic_fallback(extracted_text="Jane Doe") is True
+
+
 def test_extraction_failure_requires_synthetic_fallback():
     assert should_use_synthetic_fallback(
         extracted_text=None,
         extraction_failed=True,
+    ) is True
+
+
+def test_image_based_resume_requires_synthetic_fallback():
+    assert should_use_synthetic_fallback(
+        extracted_text="",
+        image_based_resume_detected=True,
     ) is True
 
 
