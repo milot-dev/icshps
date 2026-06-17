@@ -431,7 +431,9 @@ def _select_routing_category(
             if any(_is_employment_inconsistency_finding(finding) for finding in findings):
                 return category
         elif category == RoutingCategory.CREDENTIAL_VERIFICATION_PENDING:
-            if any(_is_pending_credential_finding(finding) for finding in findings):
+            if any(_is_pending_credential_finding(finding) for finding in findings) and not any(
+                _is_manual_review_finding(finding) for finding in findings
+            ):
                 return category
         elif category == RoutingCategory.MANUAL_REVIEW:
             if any(_is_manual_review_finding(finding) for finding in findings):

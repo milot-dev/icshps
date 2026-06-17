@@ -134,6 +134,29 @@ def test_extract_candidate_profile_extracts_employment_history_records():
     assert year_only_role.end_date == "2019"
 
 
+def test_extract_candidate_profile_extracts_inline_employment_record():
+    profile = extract_candidate_profile(
+        """
+Luan Dates
+luan.dates@example.com
++383 44 500 500
+Employment: DataWorks Backend Engineer, 2021-01 to 2024-03
+Skills: Python, FastAPI
+""",
+        candidate_id="cand_inline_employment",
+        application_id="app_inline_employment",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+    )
+
+    assert len(profile.employment_history) == 1
+    record = profile.employment_history[0]
+    assert record.company == "DataWorks"
+    assert record.title == "Backend Engineer"
+    assert record.start_date == "2021-01"
+    assert record.end_date == "2024-03"
+
+
 def test_extract_candidate_profile_adds_employment_evidence_to_index():
     profile = extract_candidate_profile(
         SAMPLE_EMPLOYMENT_RESUME_TEXT,

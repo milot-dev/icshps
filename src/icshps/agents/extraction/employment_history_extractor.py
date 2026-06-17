@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from icshps.schemas.common import EvidenceRef
 from icshps.schemas.profile import EmploymentRecord
 
 
@@ -66,6 +65,21 @@ STOP_HEADERS = {
     "summary",
     "profile",
 }
+INLINE_SECTION_LABEL_RE = re.compile(r"^\s*(experience|employment|employment history|work experience|professional experience)\s*:\s*(.+)$", re.IGNORECASE)
+JOB_TITLE_KEYWORDS = {
+    "analyst",
+    "architect",
+    "backend",
+    "consultant",
+    "data",
+    "developer",
+    "engineer",
+    "lead",
+    "manager",
+    "scientist",
+    "software",
+    "specialist",
+}
 
 
 def extract_employment_history(
@@ -77,6 +91,19 @@ def extract_employment_history(
     in_section = False
 
     for line in lines:
+        inline_section_line = inline_employment_section_line(line)
+        if inline_section_line is not None:
+            in_section = True
+            record = parse_employment_line(
+                inline_section_line,
+                source_path,
+                len(records),
+                make_evidence,
+            )
+            if record is not None:
+                records.append(record)
+            continue
+
         header = normalize_section_header(line)
         if header in SECTION_HEADERS:
             in_section = True
@@ -150,6 +177,10 @@ def parse_company_and_title(value: str) -> tuple[str | None, str | None]:
         if len(parts) >= 2:
             return parts[0], parts[1]
 
+    parts = [part for part in value.split() if part]
+    if len(parts) >= 3 and any(_is_job_title_token(part) for part in parts[1:]):
+        return clean_value(parts[0]), clean_value(" ".join(parts[1:]))
+
     return None, None
 
 
@@ -186,9 +217,22 @@ def normalize_section_header(line: str) -> str:
     return re.sub(r"[^a-z ]+", "", line.lower()).strip()
 
 
+def inline_employment_section_line(line: str) -> str | None:
+    match = INLINE_SECTION_LABEL_RE.match(line)
+    if match is None:
+        return None
+
+    return clean_value(match.group(2))
+
+
 def clean_value(value: str | None) -> str | None:
     if value is None:
         return None
 
     cleaned = re.sub(r"\s+", " ", value).strip(" ,-\u2013\u2014")
     return cleaned or None
+
+
+def _is_job_title_token(value: str) -> bool:
+    normalized = re.sub(r"[^a-z]+", "", value.lower())
+    return normalized in JOB_TITLE_KEYWORDS

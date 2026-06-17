@@ -178,6 +178,36 @@ def test_low_confidence_profile_routes_to_manual_review() -> None:
     assert artifact.decisions[0].routing_category == RoutingCategory.MANUAL_REVIEW
 
 
+def test_manual_review_signal_overrides_generic_credential_pending() -> None:
+    artifact = build_final_decision_artifact(
+        context=context(),
+        match_results=match_results(score=92.0),
+        verification_findings=FindingsArtifact(
+            run_id="run_001",
+            findings=[
+                finding(
+                    id="credential-pending-001",
+                    category=FindingCategory.CREDENTIAL,
+                    severity=Severity.WARNING,
+                    title="Certification needs verification",
+                    description="Certification was not verified.",
+                    recommendation="Route to pending credential verification.",
+                ),
+                finding(
+                    id="credential-manual-001",
+                    category=FindingCategory.CREDENTIAL,
+                    severity=Severity.WARNING,
+                    title="Mock credential evidence requires manual review",
+                    description="Bundle-provided credential evidence is low confidence.",
+                    recommendation="Route to manual credential review.",
+                ),
+            ],
+        ),
+    )
+
+    assert artifact.decisions[0].routing_category == RoutingCategory.MANUAL_REVIEW
+
+
 def test_all_routing_decisions_require_human_approval() -> None:
     artifact = build_final_decision_artifact(
         context=context(scenario_type="strong_match"),
@@ -311,6 +341,7 @@ def finding(
     severity: Severity = Severity.WARNING,
     title: str,
     description: str | None = None,
+    recommendation: str | None = None,
     candidate_id: str | None = "candidate_001",
     application_id: str | None = "app_001",
 ) -> Finding:
@@ -324,5 +355,6 @@ def finding(
         reason=description or title,
         candidate_id=candidate_id,
         application_id=application_id,
+        recommendation=recommendation,
         requires_human_review=True,
     )

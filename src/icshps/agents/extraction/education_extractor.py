@@ -206,8 +206,8 @@ def group_lines_into_education_blocks(candidate_lines: list[str]) -> list[list[s
         has_deg = contains_degree(line_stripped)
 
         if current_block:
-            curr_has_inst = any(contains_institution(l) for l in current_block)
-            curr_has_deg = any(contains_degree(l) for l in current_block)
+            curr_has_inst = any(contains_institution(block_line) for block_line in current_block)
+            curr_has_deg = any(contains_degree(block_line) for block_line in current_block)
 
             # Start new block if there's a collision (duplicate inst or deg, or line contains both)
             if (has_inst and curr_has_inst) or (has_deg and curr_has_deg) or (has_inst and has_deg):
