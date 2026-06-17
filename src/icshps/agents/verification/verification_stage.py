@@ -4,6 +4,9 @@ from icshps.agents.verification.credential_verification_agent import (
     build_credential_verification_findings,
     build_mandatory_certification_findings,
 )
+from icshps.agents.verification.linkedin_consistency_agent import (
+    build_linkedin_consistency_findings,
+)
 from icshps.schemas import BundleContext, CandidateProfile
 from icshps.services import (
     RunScaffold,
@@ -47,8 +50,14 @@ def run_verification_stage(
             candidate_profile=candidate_profile,
             credential_evidence_path=context.optional_inputs.credential_evidence,
         )
+        linkedin_artifact = build_linkedin_consistency_findings(
+            run_id=scaffold.run_id,
+            candidate_profile=candidate_profile,
+            linkedin_profiles_path=context.optional_inputs.linkedin_profiles,
+        )
         mandatory_artifact.findings.extend(credential_artifact.findings)
         artifact = mandatory_artifact
+        artifact.findings.extend(linkedin_artifact.findings)
 
     except Exception as exc:
         return AgentStageResult(
