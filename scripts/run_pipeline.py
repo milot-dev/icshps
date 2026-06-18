@@ -51,6 +51,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Delete the existing run directory before running.",
     )
+    parser.add_argument(
+        "--engine",
+        choices=("python", "langgraph"),
+        default="python",
+        help="Workflow engine to use. Default: python",
+    )
     return parser
 
 
@@ -213,16 +219,24 @@ def main(argv: list[str] | None = None) -> int:
         if args.reset and run_dir.exists():
             shutil.rmtree(run_dir)
 
-        # Keep this import inside main so invalid CLI usage fails quickly
-        # without importing the whole pipeline.
-        from icshps.graph.workflow import run_end_to_end_workflow
+        if args.engine == "langgraph":
+            from icshps.graph.langgraph_workflow import run_langgraph_workflow
 
-        run_end_to_end_workflow(
-            bundle_path=bundle_path,
-            runs_root=runs_root,
-            run_id=run_id,
-            reset=args.reset,
-        )
+            run_langgraph_workflow(
+                bundle_path=bundle_path,
+                runs_root=runs_root,
+                run_id=run_id,
+                reset=args.reset,
+            )
+        else:
+            from icshps.graph.workflow import run_end_to_end_workflow
+
+            run_end_to_end_workflow(
+                bundle_path=bundle_path,
+                runs_root=runs_root,
+                run_id=run_id,
+                reset=args.reset,
+            )
 
         _print_success(run_id=run_id, run_dir=run_dir)
         return 0
