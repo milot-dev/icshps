@@ -1,0 +1,5 @@
+bulk_application_flag: true
+application_count: 240
+surge_threshold: 50
+viral_job_post: true
+source: mock_application_volume_metadata

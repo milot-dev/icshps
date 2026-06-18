@@ -1,0 +1,53 @@
+manifest_version: '1.0'
+bundle:
+  id: multi_candidate_manual_review
+  name: Multi Candidate Manual Review
+  description: Multiple local demo candidates with mixed routing outcomes for manual review validation.
+scenario:
+  id: scenario_multi_candidate_manual_review
+  type: multi_candidate_manual_review
+  expected_routing: Manual review
+  tags:
+  - sprint_2
+  - multi_candidate
+  - manual_review
+job:
+  id: job_ai_backend_engineer_001
+  title: AI Backend Engineer
+  department: Engineering
+  location: Local Demo
+  employment_type: Full-time
+candidates:
+- id: candidate_clean_001
+  application_id: app_multi_clean_001
+  name: Arta Clean
+  target_job_id: job_ai_backend_engineer_001
+  resume_file: resumes/candidate_clean_001_resume.pdf
+- id: candidate_strong_001
+  application_id: app_multi_strong_001
+  name: Luan Strong
+  target_job_id: job_ai_backend_engineer_001
+  resume_file: resumes/candidate_strong_001_resume.pdf
+- id: candidate_low_confidence_001
+  application_id: app_multi_low_confidence_001
+  name: Mira Credential
+  target_job_id: job_ai_backend_engineer_001
+  resume_file: resumes/candidate_low_confidence_001_resume.pdf
+required_inputs:
+  job_description: job_description.md
+  skills_matrix: requirements/skills_matrix.yaml
+  eeo_policy: policies/eeo_policy.yaml
+  credential_rules: policies/credential_rules.yaml
+  hris_master: mock_data/hris_master.yaml
+optional_inputs:
+  linkedin_profiles: null
+  application_history: null
+  credential_evidence: null
+  application_volume: null
+execution:
+  deterministic: true
+  allow_missing_optional_inputs: true
+  require_human_review_for_final_decision: true
+notes:
+- Multi-candidate local demo bundle for validating one decision per candidate.
+- All mock evidence is local. No LinkedIn, ATS, HRIS, calendar, email, or background-check integration is performed.

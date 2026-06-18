@@ -1,0 +1,45 @@
+manifest_version: '1.0'
+bundle:
+  id: missing_mandatory_certification
+  name: Missing Mandatory Certification
+  description: Candidate misses a mandatory professional certification and should
+    be recommended rejection with human approval.
+scenario:
+  id: scenario_missing_mandatory_certification
+  type: missing_mandatory_certification
+  expected_routing: "Recommended rejection \u2014 human approval required"
+  tags:
+  - sprint_2
+  - certification
+  - blocking
+job:
+  id: job_ai_backend_engineer_001
+  title: AI Backend Engineer
+  department: Engineering
+  location: Local Demo
+  employment_type: Full-time
+candidates:
+- id: candidate_cert_missing_001
+  application_id: app_cert_missing_001
+  name: Blerim MissingCert
+  target_job_id: job_ai_backend_engineer_001
+  resume_file: resumes/candidate_cert_missing_001_resume.pdf
+required_inputs:
+  job_description: job_description.md
+  skills_matrix: requirements/skills_matrix.yaml
+  eeo_policy: policies/eeo_policy.yaml
+  credential_rules: policies/credential_rules.yaml
+  hris_master: mock_data/hris_master.yaml
+optional_inputs:
+  linkedin_profiles: null
+  application_history: null
+  credential_evidence: mock_data/credential_evidence.yaml
+  application_volume: null
+execution:
+  deterministic: true
+  allow_missing_optional_inputs: true
+  require_human_review_for_final_decision: true
+notes:
+- Generated deterministic local test bundle for ICSHPS Task 7 validation.
+- All mock evidence is local. No LinkedIn, ATS, HRIS, or background-check integration
+  is performed.
