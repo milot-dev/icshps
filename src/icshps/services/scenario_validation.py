@@ -22,8 +22,12 @@ from icshps.services.run_scaffolding import (
 REQUIRED_RUN_ARTIFACTS: tuple[Path, ...] = (
     Path("artifact_manifest.json"),
     Path("inputs/context_packet.json"),
+    Path("artifacts/intake_findings.json"),
     Path("artifacts/candidate_profile.json"),
     Path("artifacts/match_scores.json"),
+    Path("artifacts/compliance_flags.md"),
+    Path("artifacts/verification_findings.json"),
+    Path("artifacts/anomaly_findings.json"),
     Path("artifacts/final_decision.json"),
     Path("artifacts/shortlist.csv"),
     Path("artifacts/hiring_packet.json"),

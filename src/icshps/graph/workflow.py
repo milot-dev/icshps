@@ -37,37 +37,9 @@ from icshps.services import (
 WorkflowStatus = Literal["ready_for_downstream", "blocked", "failed"]
 EndToEndWorkflowStatus = Literal["completed", "blocked", "failed"]
 
-
-# note: InitialWorkflow will be deprecated after sprint 2
-@dataclass(frozen=True)
-class InitialWorkflowResult:
-    """Controlled result returned by the Sprint 1 initial workflow skeleton."""
-
-    status: WorkflowStatus
-    ready_for_downstream: bool
-    run_id: str | None
-    run_dir: Path | None
-    context_packet_path: Path | None
-    intake_findings_path: Path | None
-    artifact_manifest_path: Path | None
-    metrics_path: Path | None
-    audit_log_path: Path | None
-    created_artifacts: tuple[str, ...]
-    pending_artifacts: tuple[str, ...]
-    warnings: tuple[str, ...]
-    errors: tuple[str, ...]
-    next_step: str
-
-    @property
-    def ok(self) -> bool:
-        """True only when the Sprint 1 skeleton finished and downstream agents may run."""
-
-        return self.status == "ready_for_downstream" and self.ready_for_downstream
-
-
 @dataclass(frozen=True)
 class EndToEndWorkflowResult:
-    """Controlled result returned by the Sprint 2 backend orchestration flow."""
+    """Controlled result returned by the backend orchestration flow."""
 
     status: EndToEndWorkflowStatus
     ready_for_downstream: bool
@@ -112,113 +84,6 @@ class _WorkflowFoundation:
     status: WorkflowStatus
 
 
-# note: this will be deprecated after Sprint 2, but keep it stable for debugging.
-def run_initial_workflow(
-    bundle_path: str | Path,
-    *,
-    runs_root: str | Path = Path("runs"),
-    run_id: str | None = None,
-    reset: bool = True,
-) -> InitialWorkflowResult:
-    """
-    Run the completed Sprint 1 foundations in deterministic order.
-
-    This workflow intentionally stops after intake. It reuses the same foundation
-    helper as the Sprint 2 end-to-end flow so scaffold/load/intake behavior stays
-    consistent and does not duplicate logic.
-    """
-
-    scaffold: RunScaffold | None = None
-
-    try:
-        foundation = _run_workflow_foundation(
-            bundle_path=bundle_path,
-            runs_root=runs_root,
-            run_id=run_id,
-            reset=reset,
-        )
-
-        scaffold = foundation.scaffold
-        loaded_bundle = foundation.loaded_bundle
-        intake_result = foundation.intake_result
-        status = foundation.status
-
-        artifacts = _read_workflow_artifacts(scaffold.artifact_manifest_path)
-
-        _append_workflow_audit_event(
-            scaffold=scaffold,
-            status=status,
-            intake_result=intake_result,
-            loaded_bundle=loaded_bundle,
-            pending_artifacts=artifacts.pending,
-        )
-        _append_workflow_audit_log_section(
-            scaffold=scaffold,
-            status=status,
-            intake_result=intake_result,
-            pending_artifacts=artifacts.pending,
-        )
-        _set_run_metadata_status(scaffold, RunStatus.COMPLETED)
-
-        return InitialWorkflowResult(
-            status=status,
-            ready_for_downstream=intake_result.ready_for_downstream,
-            run_id=scaffold.run_id,
-            run_dir=scaffold.run_dir,
-            context_packet_path=intake_result.context_packet_path,
-            intake_findings_path=intake_result.intake_findings_path,
-            artifact_manifest_path=scaffold.artifact_manifest_path,
-            metrics_path=scaffold.artifacts_dir / "metrics.json",
-            audit_log_path=scaffold.artifacts_dir / "audit_log.md",
-            created_artifacts=artifacts.created,
-            pending_artifacts=artifacts.pending,
-            warnings=intake_result.warnings,
-            errors=intake_result.errors,
-            next_step=_next_step_for(status),
-        )
-
-    except Exception as exc:  # pragma: no cover - exercised through behavior tests.
-        if scaffold is not None:
-            _append_failure_audit_event(scaffold=scaffold, error=str(exc))
-            _append_failure_audit_log_section(scaffold=scaffold, error=str(exc))
-            _set_run_metadata_status(scaffold, RunStatus.FAILED)
-            artifacts = _read_workflow_artifacts(scaffold.artifact_manifest_path)
-
-            return InitialWorkflowResult(
-                status="failed",
-                ready_for_downstream=False,
-                run_id=scaffold.run_id,
-                run_dir=scaffold.run_dir,
-                context_packet_path=None,
-                intake_findings_path=None,
-                artifact_manifest_path=scaffold.artifact_manifest_path,
-                metrics_path=scaffold.artifacts_dir / "metrics.json",
-                audit_log_path=scaffold.artifacts_dir / "audit_log.md",
-                created_artifacts=artifacts.created,
-                pending_artifacts=artifacts.pending,
-                warnings=(),
-                errors=(str(exc),),
-                next_step="Fix the unexpected workflow error before rerunning.",
-            )
-
-        return InitialWorkflowResult(
-            status="failed",
-            ready_for_downstream=False,
-            run_id=None,
-            run_dir=None,
-            context_packet_path=None,
-            intake_findings_path=None,
-            artifact_manifest_path=None,
-            metrics_path=None,
-            audit_log_path=None,
-            created_artifacts=(),
-            pending_artifacts=(),
-            warnings=(),
-            errors=(str(exc),),
-            next_step="Provide an existing Hiring Bundle path before rerunning.",
-        )
-
-
 def run_end_to_end_workflow(
     bundle_path: str | Path,
     *,
@@ -227,11 +92,11 @@ def run_end_to_end_workflow(
     reset: bool = True,
 ) -> EndToEndWorkflowResult:
     """
-    Run the current Sprint 2 backend pipeline in deterministic order.
+    Run the current backend pipeline in deterministic order.
 
-    This flow integrates available stage outputs and builds in-memory Task 4
-    routing decisions. It intentionally stops before writing final_decision,
-    shortlist, hiring packet, metrics finalization, and polished audit artifacts.
+    This flow runs the full deterministic MVP backend pipeline, builds final
+    Agent H routing decisions, adds triage findings, and writes all final run
+    artifacts for Streamlit/demo display.
     """
 
     scaffold: RunScaffold | None = None
@@ -412,7 +277,6 @@ def run_end_to_end_workflow(
     except Exception as exc:
         if scaffold is not None:
             _append_failure_audit_event(scaffold=scaffold, error=str(exc))
-            _append_failure_audit_log_section(scaffold=scaffold, error=str(exc))
             _set_run_metadata_status(scaffold, RunStatus.FAILED)
             artifacts = _read_workflow_artifacts(scaffold.artifact_manifest_path)
 
@@ -580,7 +444,7 @@ def _append_end_to_end_audit_log_section(
         skipped_lines = "- None.\n"
 
     section = (
-        "\n## Sprint 2 Task 3: End-to-End Orchestration Flow\n\n"
+        "\n## End-to-End Orchestration Flow\n\n"
         "Executed deterministic backend order:\n\n"
         "1. `prepare_run_scaffold`\n"
         "2. `load_hiring_bundle`\n"
@@ -591,7 +455,6 @@ def _append_end_to_end_audit_log_section(
         "7. available anomaly stage\n\n"
         f"- Workflow status: `{status}`\n"
         "- Final artifact generation: `completed`\n"
-        "- Stop boundary: one-command CLI, scenario validation loop, and README/demo instructions are postponed.\n"
         f"- Next step: {_end_to_end_next_step_for(status)}\n\n"
         "### Created artifacts\n\n"
         f"{created_lines}\n"
@@ -657,35 +520,6 @@ def _append_workflow_audit_event(
     )
 
 
-def _append_workflow_audit_log_section(
-    *,
-    scaffold: RunScaffold,
-    status: WorkflowStatus,
-    intake_result: ApplicationIntakeResult,
-    pending_artifacts: tuple[str, ...],
-) -> None:
-    pending_lines = "".join(f"- `{artifact}`\n" for artifact in pending_artifacts)
-    if not pending_lines:
-        pending_lines = "- None.\n"
-
-    section = (
-        "\n## Task 7: Initial Workflow Skeleton\n\n"
-        "Executed deterministic Sprint 1 workflow order:\n\n"
-        "1. `prepare_run_scaffold`\n"
-        "2. `load_hiring_bundle`\n"
-        "3. `run_application_intake`\n\n"
-        f"- Workflow status: `{status}`\n"
-        f"- Ready for downstream: `{intake_result.ready_for_downstream}`\n"
-        f"- Blocking intake findings: `{intake_result.blocking_finding_count}`\n"
-        f"- Next step: {_next_step_for(status)}\n\n"
-        "### Reserved downstream artifacts\n\n"
-        f"{pending_lines}"
-    )
-
-    with (scaffold.artifacts_dir / "audit_log.md").open("a", encoding="utf-8") as file:
-        file.write(section)
-
-
 def _append_failure_audit_event(*, scaffold: RunScaffold, error: str) -> None:
     _append_jsonl(
         scaffold.logs_dir / "audit_events.jsonl",
@@ -696,19 +530,6 @@ def _append_failure_audit_event(*, scaffold: RunScaffold, error: str) -> None:
             "error": error,
         },
     )
-
-
-def _append_failure_audit_log_section(*, scaffold: RunScaffold, error: str) -> None:
-    section = (
-        "\n## Task 7: Initial Workflow Skeleton\n\n"
-        "- Workflow status: `failed`\n"
-        f"- Error: {error}\n"
-        "- Next step: Fix the workflow failure before rerunning.\n"
-    )
-
-    with (scaffold.artifacts_dir / "audit_log.md").open("a", encoding="utf-8") as file:
-        file.write(section)
-
 
 def _set_run_metadata_status(scaffold: RunScaffold, status: RunStatus) -> None:
     payload = _read_json_object(scaffold.metadata_path)
