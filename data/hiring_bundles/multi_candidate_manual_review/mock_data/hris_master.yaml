@@ -1,0 +1,4 @@
+mock_hris_system: local_demo
+notes:
+- Multi-candidate manual-review demo only.
+- No real HRIS posting occurs.

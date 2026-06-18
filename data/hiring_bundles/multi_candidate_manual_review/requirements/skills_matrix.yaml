@@ -1,0 +1,8 @@
+must_have: []
+nice_to_have:
+- Python
+- FastAPI
+- SQL
+- LangGraph
+- Docker
+- Git

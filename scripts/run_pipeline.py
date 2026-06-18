@@ -111,7 +111,7 @@ def _build_single_pdf_bundle(*, input_path: Path, runs_root: Path) -> Path:
     shutil.copyfile(input_path, bundle_path / "resumes" / resume_name)
 
     (bundle_path / "job_description.md").write_text(
-        "# Local Demo Role\n\nGeneral candidate screening role for single-PDF intake.\n",
+        "# Local Demo Role\n\nGeneral candidate screening role for PDF resume intake.\n",
         encoding="utf-8",
     )
     (bundle_path / "requirements" / "skills_matrix.yaml").write_text(
