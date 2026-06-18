@@ -8,6 +8,7 @@
   <img src="https://img.shields.io/badge/uv-Package_Manager-4B32C3?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Streamlit-Demo_UI-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" />
   <img src="https://img.shields.io/badge/Pydantic-Schemas-E92063?style=for-the-badge&logo=pydantic&logoColor=white" />
+  <img src="https://img.shields.io/badge/LangGraph-Orchestration-1C3C3C?style=for-the-badge" />
   <img src="https://img.shields.io/badge/PyMuPDF-PDF_Extraction-2E8B57?style=for-the-badge" />
   <img src="https://img.shields.io/badge/PyYAML-Bundle_Config-CB171E?style=for-the-badge" />
   <img src="https://img.shields.io/badge/pytest-Testing-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" />
@@ -36,6 +37,7 @@ The repository includes:
 - Hiring Bundle loader and validation
 - Application Intake / Context Agent
 - deterministic end-to-end backend workflow
+- optional LangGraph orchestration path
 - clean-PDF resume text extraction baseline
 - candidate profile extraction baseline
 - multi-candidate pipeline handling
@@ -50,6 +52,7 @@ The repository includes:
 - shortlist, hiring packet, audit log, and metrics artifacts
 - one-command Hiring Bundle and single-PDF demo runs
 - scenario validation for MVP test bundles
+- LangGraph workflow tests
 - unit tests for the implemented foundation and backend pipeline
 
 ---
@@ -111,6 +114,8 @@ runs/<run_id>/
 
 The pipeline runs through scaffolding, bundle loading, validation, intake, extraction, matching, verification, compliance checks, anomaly detection, exception triage, routing, and final artifact generation.
 
+The default engine remains the stable pure Python workflow. A minimal LangGraph engine is also available through `--engine langgraph`; it preserves the same deterministic stage order and calls the same existing stage runners.
+
 All final routing recommendations are decision support outputs and require human approval.
 
 ---
@@ -134,7 +139,10 @@ ICSHPS/
 ├── src/
 │   └── icshps/
 │       ├── agents/                  # Agent and stage logic
-│       ├── graph/                   # Workflow orchestration layer
+│       ├── graph/                   # Python and LangGraph workflow orchestration layer
+│       │   ├── workflow.py          # Stable deterministic MVP workflow
+│       │   ├── state.py             # LangGraph runtime state definition
+│       │   └── langgraph_workflow.py # Optional LangGraph orchestration path
 │       ├── policies/                # Reserved policy configuration package
 │       ├── schemas/                 # Shared Pydantic schema contracts
 │       ├── services/                # Bundle loading, artifact writing, run scaffolding
@@ -168,6 +176,12 @@ Run the backend pipeline for a Hiring Bundle:
 
 ```bash
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset
+```
+
+Run the same backend pipeline through LangGraph orchestration:
+
+```bash
+uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset --engine langgraph
 ```
 
 Run the backend pipeline for a single clean PDF resume:
