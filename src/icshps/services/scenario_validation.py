@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from dataclasses import asdict, dataclass
@@ -18,6 +17,8 @@ from icshps.services.run_scaffolding import (
     build_deterministic_run_id,
     compute_bundle_fingerprint,
 )
+from icshps.utils.file_io import read_json_object, read_yaml_object, write_json
+from icshps.utils.ids import sha256_file
 
 REQUIRED_RUN_ARTIFACTS: tuple[Path, ...] = (
     Path("artifact_manifest.json"),
@@ -236,8 +237,7 @@ def validate_scenario_bundle(
     loaded_bundle = load_hiring_bundle(bundle_path, run_id=run_id)
     if not loaded_bundle.ok:
         issues.extend(
-            ValidationIssue("manifest_valid", error)
-            for error in loaded_bundle.errors
+            ValidationIssue("manifest_valid", error) for error in loaded_bundle.errors
         )
         return ScenarioValidationResult(
             bundle_name=bundle_path.name,
@@ -356,7 +356,7 @@ def validate_final_decision(
     issues: list[ValidationIssue] = []
 
     try:
-        payload = json.loads(final_decision_path.read_text(encoding="utf-8"))
+        payload = read_json_object(final_decision_path)
         final_decision = FinalDecisionArtifact.model_validate(payload)
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
         return (
@@ -381,7 +381,9 @@ def validate_final_decision(
         decision.routing_category.value for decision in final_decision.decisions
     )
 
-    if any(not decision.requires_human_approval for decision in final_decision.decisions):
+    if any(
+        not decision.requires_human_approval for decision in final_decision.decisions
+    ):
         issues.append(
             ValidationIssue(
                 "human_approval_required",
@@ -400,7 +402,10 @@ def validate_final_decision(
             )
         )
 
-    if expected_category is not None and expected_category.value not in actual_categories:
+    if (
+        expected_category is not None
+        and expected_category.value not in actual_categories
+    ):
         issues.append(
             ValidationIssue(
                 "routing_matches_expected",
@@ -469,9 +474,7 @@ def fingerprint_artifacts(
     for relative_path in relative_paths:
         path = run_dir / relative_path
         if path.exists():
-            fingerprints[relative_path] = hashlib.sha256(
-                path.read_bytes()
-            ).hexdigest()
+            fingerprints[relative_path] = sha256_file(path)
 
     return fingerprints
 
@@ -523,11 +526,7 @@ def write_validation_report(
 ) -> Path:
     """Write a deterministic JSON validation report for team review."""
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(_report_to_json(report), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    write_json(output_path, _report_to_json(report))
     return output_path
 
 
@@ -593,11 +592,11 @@ def _read_raw_manifest(bundle_path: Path) -> dict[str, object]:
         return {}
 
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw = read_yaml_object(path)
     except yaml.YAMLError:
         return {}
 
-    return raw if isinstance(raw, dict) else {}
+    return raw
 
 
 def _report_to_json(report: ScenarioValidationReport) -> dict[str, object]:

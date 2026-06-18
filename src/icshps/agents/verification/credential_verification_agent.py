@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from icshps.schemas import (
     CertificationRecord,
     EvidenceRef,
@@ -15,6 +13,8 @@ from icshps.schemas import (
     FindingsArtifact,
     CandidateProfile,
 )
+from icshps.utils.file_io import read_yaml_object
+from icshps.utils.text import normalize_lookup_key
 
 AGENT_NAME = "mandatory_certification_check_v1"
 CREDENTIAL_AGENT_NAME = "credential_verification_agent_v1"
@@ -28,7 +28,7 @@ def build_credential_verification_findings(
 ) -> FindingsArtifact:
     """Check education and certifications against local mock credential evidence."""
 
-    mock_evidence = _load_yaml_object(credential_evidence_path)
+    mock_evidence = read_yaml_object(credential_evidence_path)
     findings: list[Finding] = []
 
     for education in candidate_profile.education:
@@ -133,7 +133,7 @@ def _load_required_certifications(skills_matrix_path: Path) -> list[dict[str, st
     if not skills_matrix_path.exists() or skills_matrix_path.stat().st_size == 0:
         return []
 
-    payload = yaml.safe_load(skills_matrix_path.read_text(encoding="utf-8")) or {}
+    payload = read_yaml_object(skills_matrix_path)
     raw_items = (
         payload.get("mandatory_certifications")
         or payload.get("required_certifications")
@@ -372,14 +372,6 @@ def _credential_finding(
     )
 
 
-def _load_yaml_object(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists() or path.stat().st_size == 0:
-        return {}
-
-    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return payload if isinstance(payload, dict) else {}
-
-
 def _matching_mock_record(
     records: Any,
     *,
@@ -399,7 +391,10 @@ def _matching_mock_record(
     for record in records:
         if not isinstance(record, dict):
             continue
-        if all(_normalize(str(record.get(key, ""))) == value for key, value in wanted.items()):
+        if all(
+            _normalize(str(record.get(key, ""))) == value
+            for key, value in wanted.items()
+        ):
             return record
 
     return None
@@ -452,4 +447,4 @@ def _parse_required_certification(item: Any) -> dict[str, str] | None:
 
 
 def _normalize(value: str) -> str:
-    return " ".join(value.lower().replace("-", " ").split())
+    return normalize_lookup_key(value)

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import shutil
 import sys
 from pathlib import Path
 
+from icshps.utils.file_io import write_text
+from icshps.utils.ids import deterministic_name_id, sha256_file
+from icshps.utils.text import slugify
 
 EXPECTED_ARTIFACTS: tuple[Path, ...] = (
     Path("inputs/context_packet.json"),
@@ -59,11 +61,9 @@ def _stable_run_id(bundle_path: Path) -> str:
     This keeps demo runs stable without relying on timestamps.
     """
     manifest_path = bundle_path / "manifest.yaml"
-    manifest_bytes = manifest_path.read_bytes()
-    digest = hashlib.sha256(manifest_bytes).hexdigest()[:8]
-
+    digest = sha256_file(manifest_path)
     slug = bundle_path.name.strip().lower().replace(" ", "_").replace("-", "_")
-    return f"{slug}_{digest}"
+    return deterministic_name_id(slug, digest)
 
 
 def _validate_bundle_path(bundle_path: Path) -> None:
@@ -95,8 +95,8 @@ def _prepare_input_path(input_path: Path, runs_root: Path) -> Path:
 
 
 def _build_single_pdf_bundle(*, input_path: Path, runs_root: Path) -> Path:
-    digest = hashlib.sha256(input_path.read_bytes()).hexdigest()[:8]
-    slug = input_path.stem.strip().lower().replace(" ", "_").replace("-", "_")
+    digest = sha256_file(input_path, length=8)
+    slug = slugify(input_path.stem)
     bundle_path = runs_root / "_single_pdf_bundles" / f"{slug}_{digest}"
 
     if bundle_path.exists():
@@ -110,29 +110,29 @@ def _build_single_pdf_bundle(*, input_path: Path, runs_root: Path) -> Path:
     resume_name = f"{slug or 'candidate'}_resume.pdf"
     shutil.copyfile(input_path, bundle_path / "resumes" / resume_name)
 
-    (bundle_path / "job_description.md").write_text(
+    write_text(
+        bundle_path / "job_description.md",
         "# Local Demo Role\n\nGeneral candidate screening role for PDF resume intake.\n",
-        encoding="utf-8",
     )
-    (bundle_path / "requirements" / "skills_matrix.yaml").write_text(
+    write_text(
+        bundle_path / "requirements" / "skills_matrix.yaml",
         "must_have: []\nnice_to_have: []\nmandatory_certifications: []\n",
-        encoding="utf-8",
     )
-    (bundle_path / "policies" / "eeo_policy.yaml").write_text(
+    write_text(
+        bundle_path / "policies" / "eeo_policy.yaml",
         "risky_phrases: []\n",
-        encoding="utf-8",
     )
-    (bundle_path / "policies" / "credential_rules.yaml").write_text(
+    write_text(
+        bundle_path / "policies" / "credential_rules.yaml",
         "mandatory_certifications: []\n",
-        encoding="utf-8",
     )
-    (bundle_path / "mock_data" / "hris_master.yaml").write_text(
+    write_text(
+        bundle_path / "mock_data" / "hris_master.yaml",
         "mock_hris_system: local_demo\nnotes:\n- Single-PDF local mock bundle.\n",
-        encoding="utf-8",
     )
-    (bundle_path / "manifest.yaml").write_text(
+    write_text(
+        bundle_path / "manifest.yaml",
         _single_pdf_manifest(resume_name=resume_name, slug=slug or "candidate"),
-        encoding="utf-8",
     )
 
     return bundle_path

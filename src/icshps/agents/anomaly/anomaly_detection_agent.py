@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,8 @@ from icshps.schemas import (
     Finding,
     FindingsArtifact,
 )
+from icshps.utils.dates import date_ranges_overlap
+from icshps.utils.file_io import read_json_object, read_yaml_object
 
 AGENT_NAME = "surge_mode_detection_v1"
 ANOMALY_AGENT_NAME = "anomaly_detection_agent_v1"
@@ -90,7 +91,9 @@ def build_surge_mode_findings(
                         source_path=application_volume_path,
                         source_type="application_volume_metadata",
                         section="surge_indicators",
-                        text_snippet=_build_evidence_snippet(surge_conditions, volume_data),
+                        text_snippet=_build_evidence_snippet(
+                            surge_conditions, volume_data
+                        ),
                         confidence=1.0,
                     )
                 ],
@@ -114,16 +117,18 @@ def _load_application_volume_metadata(path: Path) -> dict[str, Any]:
 
     try:
         if path.suffix.lower() in (".yaml", ".yml"):
-            return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            return read_yaml_object(path)
         elif path.suffix.lower() == ".json":
-            return json.loads(path.read_text(encoding="utf-8")) or {}
+            return read_json_object(path)
     except (ValueError, yaml.YAMLError):
         return {}
 
     return {}
 
 
-def _duplicate_candidate_findings(candidate_profiles: list[CandidateProfile]) -> list[Finding]:
+def _duplicate_candidate_findings(
+    candidate_profiles: list[CandidateProfile],
+) -> list[Finding]:
     profiles_by_email: dict[str, list[CandidateProfile]] = {}
     for profile in candidate_profiles:
         email = profile.email.value if profile.email else None
@@ -146,7 +151,9 @@ def _duplicate_candidate_findings(candidate_profiles: list[CandidateProfile]) ->
                 candidate_id=profiles[0].candidate_id,
                 application_id=profiles[0].application_id,
                 confidence=1.0,
-                evidence=[ref for profile in profiles for ref in profile.evidence_index],
+                evidence=[
+                    ref for profile in profiles for ref in profile.evidence_index
+                ],
                 recommendation="Route to duplicate / multi-role review.",
                 requires_human_review=True,
             )
@@ -203,8 +210,9 @@ def _multi_role_findings(
     ):
         return []
 
-    payload = yaml.safe_load(application_history_path.read_text(encoding="utf-8")) or {}
-    if not isinstance(payload, dict):
+    try:
+        payload = read_yaml_object(application_history_path)
+    except yaml.YAMLError:
         return []
 
     candidate_id = str(payload.get("candidate_id", "")).strip()
@@ -247,26 +255,12 @@ def _multi_role_findings(
 
 
 def _employment_ranges_overlap(left: EmploymentRecord, right: EmploymentRecord) -> bool:
-    left_start = _month_index(left.start_date)
-    right_start = _month_index(right.start_date)
-    if left_start is None or right_start is None:
-        return False
-
-    left_end = _month_index(left.end_date) if left.end_date else 999999
-    right_end = _month_index(right.end_date) if right.end_date else 999999
-    if left_end is None or right_end is None:
-        return False
-
-    return left_start <= right_end and right_start <= left_end
-
-
-def _month_index(value: str | None) -> int | None:
-    if not value:
-        return None
-    parts = value.split("-")
-    if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
-        return None
-    return int(parts[0]) * 12 + int(parts[1])
+    return date_ranges_overlap(
+        left.start_date,
+        left.end_date,
+        right.start_date,
+        right.end_date,
+    )
 
 
 def _check_surge_conditions(volume_data: dict[str, Any]) -> dict[str, bool | int]:

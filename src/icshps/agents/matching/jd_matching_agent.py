@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 from icshps.schemas import (
     CandidateMatchResult,
     JobMatchRequirements,
@@ -10,6 +8,7 @@ from icshps.schemas import (
     CertificationRecord,
     SkillRecord,
 )
+from icshps.utils.text import normalize_token_text
 
 MUST_HAVE_WEIGHT = 45.0
 NICE_TO_HAVE_WEIGHT = 25.0
@@ -139,7 +138,7 @@ def _certifications_by_normalized_name(
 
 
 def _normalize(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.lower())
+    return normalize_token_text(value).replace(" ", "")
 
 
 def _requirement_id(*, prefix: str, index: int, requirement: str) -> str:

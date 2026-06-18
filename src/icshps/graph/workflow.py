@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
-
-from pydantic import BaseModel
 
 from icshps.agents.anomaly import run_anomaly_stage
 from icshps.agents.compliance import run_compliance_stage
@@ -33,9 +30,11 @@ from icshps.services import (
     write_compliance_flags_md,
     write_final_run_artifacts,
 )
+from icshps.utils.file_io import append_jsonl, read_json_object, write_json
 
 WorkflowStatus = Literal["ready_for_downstream", "blocked", "failed"]
 EndToEndWorkflowStatus = Literal["completed", "blocked", "failed"]
+
 
 @dataclass(frozen=True)
 class EndToEndWorkflowResult:
@@ -383,7 +382,7 @@ def _update_end_to_end_metrics(
     skipped_stages: tuple[str, ...],
 ) -> None:
     metrics_path = scaffold.artifacts_dir / "metrics.json"
-    payload = _read_json_object(metrics_path)
+    payload = read_json_object(metrics_path)
     context = loaded_bundle.context
 
     payload.update(
@@ -396,7 +395,7 @@ def _update_end_to_end_metrics(
         }
     )
 
-    _write_json(metrics_path, payload)
+    write_json(metrics_path, payload)
 
 
 def _append_end_to_end_audit_event(
@@ -408,7 +407,7 @@ def _append_end_to_end_audit_event(
     pending_artifacts: tuple[str, ...],
     skipped_stages: tuple[str, ...],
 ) -> None:
-    _append_jsonl(
+    append_jsonl(
         scaffold.logs_dir / "audit_events.jsonl",
         {
             "event": "end_to_end_workflow_completed",
@@ -479,7 +478,7 @@ def _next_step_for(status: WorkflowStatus) -> str:
 
 
 def _read_workflow_artifacts(path: Path) -> _WorkflowArtifacts:
-    payload = _read_json_object(path)
+    payload = read_json_object(path)
     manifest = RunArtifactManifest.model_validate(payload)
 
     created: list[str] = []
@@ -504,7 +503,7 @@ def _append_workflow_audit_event(
 ) -> None:
     context = loaded_bundle.context
 
-    _append_jsonl(
+    append_jsonl(
         scaffold.logs_dir / "audit_events.jsonl",
         {
             "event": "initial_workflow_completed",
@@ -521,7 +520,7 @@ def _append_workflow_audit_event(
 
 
 def _append_failure_audit_event(*, scaffold: RunScaffold, error: str) -> None:
-    _append_jsonl(
+    append_jsonl(
         scaffold.logs_dir / "audit_events.jsonl",
         {
             "event": "initial_workflow_failed",
@@ -531,30 +530,9 @@ def _append_failure_audit_event(*, scaffold: RunScaffold, error: str) -> None:
         },
     )
 
+
 def _set_run_metadata_status(scaffold: RunScaffold, status: RunStatus) -> None:
-    payload = _read_json_object(scaffold.metadata_path)
+    payload = read_json_object(scaffold.metadata_path)
     metadata = RunMetadata.model_validate(payload)
     updated = metadata.model_copy(update={"status": status})
-    _write_json(scaffold.metadata_path, updated)
-
-
-def _append_jsonl(path: Path, event: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(event, sort_keys=True) + "\n")
-
-
-def _read_json_object(path: Path) -> dict[str, object]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
-
-    if not isinstance(raw, dict):
-        raise ValueError(f"Expected JSON object at {path}")
-
-    return raw
-
-
-def _write_json(path: Path, payload: BaseModel | dict[str, object]) -> None:
-    data = (
-        payload.model_dump(mode="json") if isinstance(payload, BaseModel) else payload
-    )
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(scaffold.metadata_path, updated)

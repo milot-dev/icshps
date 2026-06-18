@@ -13,7 +13,7 @@ from icshps.schemas import BundleContext, CandidateProfile, FindingsArtifact
 from icshps.services import (
     RunScaffold,
     AgentStageResult,
-    read_json_artifact,
+    read_candidate_profiles,
     write_json_artifact,
 )
 
@@ -26,7 +26,11 @@ def run_verification_stage(
 ) -> AgentStageResult:
     """Run the orchestration-facing credential verification artifact stage."""
 
-    profiles = list(candidate_profiles) if candidate_profiles is not None else _read_candidate_profiles(scaffold)
+    profiles = (
+        list(candidate_profiles)
+        if candidate_profiles is not None
+        else read_candidate_profiles(scaffold)
+    )
     if not profiles:
         return AgentStageResult(
             path=None,
@@ -86,14 +90,3 @@ def run_verification_stage(
         skipped_stages=(),
         warnings=(),
     )
-
-
-def _read_candidate_profiles(scaffold: RunScaffold) -> list[CandidateProfile]:
-    profile_payload = read_json_artifact(
-        scaffold=scaffold,
-        artifact_key="candidate_profile",
-    )
-    if profile_payload is None:
-        return []
-
-    return [CandidateProfile.model_validate(profile_payload)]

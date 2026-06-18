@@ -5,7 +5,7 @@ from icshps.agents.extraction.synthetic_profile_fallback import (
     should_use_synthetic_fallback,
 )
 from icshps.agents.extraction.resume_extraction_stage import run_resume_extraction_stage
-from icshps.agents.extraction.resume_extraction_agent import dedupe_evidence_refs
+from icshps.utils.evidence import dedupe_evidence_refs
 
 __all__ = [
     "extract_candidate_profile",

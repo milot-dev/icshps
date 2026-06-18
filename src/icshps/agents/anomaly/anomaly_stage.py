@@ -7,7 +7,7 @@ from icshps.schemas import BundleContext, CandidateProfile
 from icshps.services import (
     AgentStageResult,
     RunScaffold,
-    read_json_artifact,
+    read_candidate_profiles,
     write_json_artifact,
 )
 
@@ -21,7 +21,11 @@ def run_anomaly_stage(
     """Run the orchestration-facing anomaly findings artifact stage."""
 
     try:
-        profiles = list(candidate_profiles) if candidate_profiles is not None else _read_candidate_profiles(scaffold)
+        profiles = (
+            list(candidate_profiles)
+            if candidate_profiles is not None
+            else read_candidate_profiles(scaffold)
+        )
         artifact = build_anomaly_findings(
             run_id=scaffold.run_id,
             candidate_profiles=profiles,
@@ -34,10 +38,7 @@ def run_anomaly_stage(
             path=None,
             created_artifacts=(),
             skipped_stages=("anomaly_findings",),
-            warnings=(
-                "Anomaly stage skipped after controlled anomaly error: "
-                f"{exc}",
-            ),
+            warnings=(f"Anomaly stage skipped after controlled anomaly error: {exc}",),
         )
 
     artifact_path = write_json_artifact(
@@ -52,14 +53,3 @@ def run_anomaly_stage(
         skipped_stages=(),
         warnings=(),
     )
-
-
-def _read_candidate_profiles(scaffold: RunScaffold) -> list[CandidateProfile]:
-    profile_payload = read_json_artifact(
-        scaffold=scaffold,
-        artifact_key="candidate_profile",
-    )
-    if profile_payload is None:
-        return []
-
-    return [CandidateProfile.model_validate(profile_payload)]

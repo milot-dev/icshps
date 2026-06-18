@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-from pydantic import BaseModel
 
 from icshps.schemas import (
     FindingCategory,
@@ -17,6 +13,7 @@ from icshps.schemas import (
     RunArtifactManifest,
 )
 from icshps.services import LoadedBundle, RunScaffold, snapshot_manifest_to_run
+from icshps.utils.file_io import append_jsonl, read_json_object, write_json
 
 AGENT_NAME = "application_intake_context_agent"
 CONTEXT_PACKET_FILENAME = "context_packet.json"
@@ -65,11 +62,11 @@ def run_application_intake(
     context_packet_path = None
     if loaded_bundle.context is not None:
         context_packet_path = scaffold.inputs_dir / CONTEXT_PACKET_FILENAME
-        _write_json(context_packet_path, loaded_bundle.context)
+        write_json(context_packet_path, loaded_bundle.context)
 
     findings_artifact = build_intake_findings(loaded_bundle)
     intake_findings_path = scaffold.artifacts_dir / INTAKE_FINDINGS_FILENAME
-    _write_json(intake_findings_path, findings_artifact)
+    write_json(intake_findings_path, findings_artifact)
 
     ready_for_downstream = bool(
         loaded_bundle.ok
@@ -78,7 +75,7 @@ def run_application_intake(
         and not _has_blocking_findings(findings_artifact)
     )
 
-    _append_audit_event(
+    append_jsonl(
         scaffold.logs_dir / "audit_events.jsonl",
         {
             "event": "application_intake_completed",
@@ -349,13 +346,6 @@ def _blocking_finding_count(artifact: FindingsArtifact) -> int:
     )
 
 
-def _append_audit_event(path: Path, event: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(event, sort_keys=True) + "\n")
-
-
 def _append_audit_log_section(
     *,
     scaffold: RunScaffold,
@@ -413,7 +403,7 @@ def _update_metrics(
     blocking_finding_count: int,
 ) -> None:
     metrics_path = scaffold.artifacts_dir / "metrics.json"
-    metrics = _read_json_object(metrics_path)
+    metrics = read_json_object(metrics_path, default_empty=True)
     context = loaded_bundle.context
 
     metrics["status"] = "intake_ready" if ready_for_downstream else "intake_blocked"
@@ -445,7 +435,7 @@ def _update_metrics(
 
     metrics["artifacts_created"] = sorted(artifacts_created)
 
-    _write_json(metrics_path, metrics)
+    write_json(metrics_path, metrics)
 
 
 def _mark_artifacts_created(
@@ -453,7 +443,7 @@ def _mark_artifacts_created(
     scaffold: RunScaffold,
     artifact_keys: tuple[str, ...],
 ) -> None:
-    payload = _read_json_object(scaffold.artifact_manifest_path)
+    payload = read_json_object(scaffold.artifact_manifest_path, default_empty=True)
     artifact_manifest = RunArtifactManifest.model_validate(payload)
 
     for key in artifact_keys:
@@ -461,29 +451,4 @@ def _mark_artifacts_created(
         if artifact_ref is not None:
             artifact_ref.status = ArtifactStatus.CREATED
 
-    _write_json(scaffold.artifact_manifest_path, artifact_manifest)
-
-
-def _read_json_object(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-
-    raw = json.loads(path.read_text(encoding="utf-8"))
-
-    if not isinstance(raw, dict):
-        raise ValueError(f"Expected JSON object at {path}")
-
-    return raw
-
-
-def _write_json(path: Path, payload: BaseModel | dict[str, Any]) -> None:
-    if isinstance(payload, BaseModel):
-        data = payload.model_dump(mode="json")
-    else:
-        data = payload
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(data, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    write_json(scaffold.artifact_manifest_path, artifact_manifest)

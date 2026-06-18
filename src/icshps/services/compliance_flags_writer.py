@@ -61,7 +61,7 @@ def _filter_relevant_findings(findings: list[Finding]) -> list[Finding]:
             or _is_routing_finding(finding)
         ):
             relevant.append(finding)
-    return sorted(relevant, key=_finding_sort_key)
+    return sorted(relevant, key=_is_compliance_flag_finding)
 
 
 def _is_eeo_finding(finding: Finding) -> bool:
@@ -119,7 +119,7 @@ def _group_findings(findings: list[Finding]) -> dict[str, list[Finding]]:
     return {name: groups[name] for name in groups if groups[name]}
 
 
-def _finding_sort_key(finding: Finding) -> tuple[int, str, str, str]:
+def _is_compliance_flag_finding(finding: Finding) -> tuple[int, str, str, str]:
     severity = str(finding.severity).lower()
     severity_rank = _SEVERITY_ORDER.get(severity, 99)
     category = finding.category.value if isinstance(finding.category, Enum) else str(finding.category)

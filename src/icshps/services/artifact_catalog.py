@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from icshps.schemas.run import RunArtifactManifest
+from icshps.utils.file_io import read_json_object
 
 ArtifactAvailabilityStatus = Literal["available", "not_generated_yet"]
 ArtifactCatalogStatus = Literal[
@@ -115,7 +116,7 @@ def read_artifact_catalog(run_dir: str | Path) -> ArtifactCatalogResult:
         )
 
     try:
-        manifest = RunArtifactManifest.model_validate(_read_json_object(manifest_path))
+        manifest = RunArtifactManifest.model_validate(read_json_object(manifest_path))
         artifacts = tuple(
             _build_catalog_item(
                 run_dir=resolved_run_dir,
@@ -124,7 +125,13 @@ def read_artifact_catalog(run_dir: str | Path) -> ArtifactCatalogResult:
             )
             for key in sorted(manifest.artifacts)
         )
-    except (json.JSONDecodeError, OSError, TypeError, ValueError, ValidationError) as exc:
+    except (
+        json.JSONDecodeError,
+        OSError,
+        TypeError,
+        ValueError,
+        ValidationError,
+    ) as exc:
         return ArtifactCatalogResult(
             status="invalid_manifest",
             run_id=resolved_run_dir.name,
@@ -151,7 +158,9 @@ def _build_catalog_item(
 ) -> ArtifactCatalogItem:
     artifact_ref = manifest.artifacts[key]
     relative_path = _normalize_relative_path(artifact_ref.path)
-    absolute_path = _resolve_inside_run_dir(run_dir=run_dir, relative_path=relative_path)
+    absolute_path = _resolve_inside_run_dir(
+        run_dir=run_dir, relative_path=relative_path
+    )
 
     status: ArtifactAvailabilityStatus = (
         "available"
@@ -197,12 +206,3 @@ def _resolve_inside_run_dir(*, run_dir: Path, relative_path: Path) -> Path:
         raise ValueError(f"Artifact path escapes run directory: {relative_path}")
 
     return absolute_path
-
-
-def _read_json_object(path: Path) -> dict[str, Any]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
-
-    if not isinstance(raw, dict):
-        raise ValueError(f"Expected JSON object at {path}")
-
-    return raw

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-
 from icshps.schemas import (
     EvidenceRef,
     FinalDecisionArtifact,
@@ -11,6 +9,8 @@ from icshps.schemas import (
     RoutingCategory,
     Severity,
 )
+from icshps.utils.evidence import evidence_from_findings
+from icshps.utils.ids import stable_id
 
 AGENT_NAME = "exception_triage_agent_v1"
 
@@ -37,7 +37,8 @@ def build_exception_triage_findings(
         ]
         findings.append(
             Finding(
-                id=_stable_id(
+                id=stable_id(
+                    "triage",
                     "triage",
                     decision.candidate_id,
                     decision.application_id,
@@ -100,13 +101,4 @@ def _recommendation_for_route(category: RoutingCategory) -> str:
 
 
 def _triage_evidence(source_findings: list[Finding]) -> list[EvidenceRef]:
-    evidence: list[EvidenceRef] = []
-    for finding in source_findings:
-        evidence.extend(finding.evidence)
-    return evidence
-
-
-def _stable_id(*parts: str) -> str:
-    raw = "|".join(part.lower().strip() for part in parts)
-    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
-    return f"{parts[0]}-{digest}"
+    return evidence_from_findings(source_findings)

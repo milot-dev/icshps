@@ -2,15 +2,29 @@
 
 **Intelligent Candidate Screening & Hiring Pipeline System**
 
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.14-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/uv-Package_Manager-4B32C3?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Streamlit-Demo_UI-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" />
+  <img src="https://img.shields.io/badge/Pydantic-Schemas-E92063?style=for-the-badge&logo=pydantic&logoColor=white" />
+  <img src="https://img.shields.io/badge/PyMuPDF-PDF_Extraction-2E8B57?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/PyYAML-Bundle_Config-CB171E?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/pytest-Testing-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" />
+  <img src="https://img.shields.io/badge/Ruff-Linting-D7FF64?style=for-the-badge" />
+</p>
+
+
 ICSHPS is a local deterministic AI hiring workflow prototype designed to process structured Hiring Bundles and produce audit friendly candidate screening artifacts for human review.
 
 The project focuses on controlled agent style processing, traceable evidence, shared schema contracts, deterministic run outputs, and a simple local demo flow. It is not a production ATS, background checking platform, or autonomous hiring decision maker.
 
 ---
 
-## Current Project State
 
-The project is currently a local deterministic MVP backend with expanded
+## Project State
+
+The project is a local deterministic MVP backend with expanded
 multi-candidate, triage, verification, and single-PDF demo support.
 
 The repository includes:
@@ -40,9 +54,9 @@ The repository includes:
 
 ---
 
-## Current Workflow
+## Workflow
 
-The current MVP backend workflow executes a deterministic end-to-end hiring pipeline:
+The MVP backend workflow executes a deterministic end-to-end hiring pipeline:
 
 ```text
 Hiring Bundle or Single Clean PDF Resume
@@ -70,7 +84,7 @@ Final Routing Decisions and Run Artifacts
 
 The backend pipeline deterministic. Each run creates a dedicated run directory under `runs/`, allowing the same input bundle to be re run and inspected consistently.
 
-Current generated outputs include:
+Generated outputs include:
 
 ```text
 runs/<run_id>/
@@ -95,9 +109,44 @@ runs/<run_id>/
     audit_events.jsonl
 ```
 
-The pipeline currently runs through scaffolding, bundle loading, validation, intake, extraction, matching, verification, compliance checks, anomaly detection, exception triage, routing, and final artifact generation.
+The pipeline runs through scaffolding, bundle loading, validation, intake, extraction, matching, verification, compliance checks, anomaly detection, exception triage, routing, and final artifact generation.
 
 All final routing recommendations are decision support outputs and require human approval.
+
+---
+
+## Project Structure
+
+```text
+ICSHPS/
+├── data/
+│   ├── hiring_bundles/              # Scenario based Hiring Bundles used as pipeline inputs
+│   └── sample_outputs/              # Example output artifacts
+│
+├── docs/                            # Project documentation and shared contracts
+│
+├── scripts/                         # Local CLI scripts for running and validating the pipeline
+│   ├── run_pipeline.py              # Main one command backend pipeline runner
+│   ├── run_end_to_end_workflow.py   # End to end workflow runner
+│   ├── validate_candidate_bundle.py # Single Hiring Bundle validation
+│   └── validate_scenario_bundles.py # MVP scenario validation
+│
+├── src/
+│   └── icshps/
+│       ├── agents/                  # Agent and stage logic
+│       ├── graph/                   # Workflow orchestration layer
+│       ├── policies/                # Reserved policy configuration package
+│       ├── schemas/                 # Shared Pydantic schema contracts
+│       ├── services/                # Bundle loading, artifact writing, run scaffolding
+│       └── utils/                   # Small shared utility helpers
+│
+├── tests/                           # Unit and workflow tests
+├── runs/                            # Generated run outputs
+├── streamlit_app.py                 # Local Streamlit demo shell
+├── pyproject.toml                   # Dependencies and project configuration
+├── uv.lock                          # Locked dependency versions
+└── README.md
+```
 
 ---
 
@@ -145,7 +194,7 @@ Check linting with Ruff:
 uv run ruff check .
 ```
 
-The current pipeline writes run outputs to:
+The pipeline writes run outputs to:
 
 ```text
 runs/<run_id>/

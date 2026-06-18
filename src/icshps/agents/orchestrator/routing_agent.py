@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import re
 from collections.abc import Iterable, Sequence
 
 from icshps.agents.compliance.eeo_agent import build_eeo_compliance_findings
@@ -20,6 +18,8 @@ from icshps.schemas import (
     Severity,
 )
 from icshps.services import RunScaffold, read_json_artifact
+from icshps.utils.ids import stable_id
+from icshps.utils.text import normalize_token_text
 
 LOW_CONFIDENCE_THRESHOLD = 0.70
 ADVANCE_SCORE_THRESHOLD = 80.0
@@ -292,7 +292,8 @@ def _missing_mandatory_findings(result: CandidateMatchResult) -> list[Finding]:
     for requirement in sorted(result.missing_mandatory_requirements):
         findings.append(
             Finding(
-                id=_stable_id(
+                id=stable_id(
+                    "match-missing-mandatory",
                     "match-missing-mandatory",
                     result.candidate_id,
                     result.application_id,
@@ -321,7 +322,8 @@ def _candidate_profile_findings(profile: CandidateProfile) -> list[Finding]:
     if profile.extraction_confidence < LOW_CONFIDENCE_THRESHOLD:
         findings.append(
             Finding(
-                id=_stable_id(
+                id=stable_id(
+                    "profile-low-confidence",
                     "profile-low-confidence",
                     profile.candidate_id,
                     profile.application_id,
@@ -348,7 +350,8 @@ def _candidate_profile_findings(profile: CandidateProfile) -> list[Finding]:
     if profile.synthetic_fallback_used:
         findings.append(
             Finding(
-                id=_stable_id(
+                id=stable_id(
+                    "profile-synthetic-fallback",
                     "profile-synthetic-fallback",
                     profile.candidate_id,
                     profile.application_id,
@@ -371,7 +374,8 @@ def _candidate_profile_findings(profile: CandidateProfile) -> list[Finding]:
     for index, flag in enumerate(sorted(profile.manual_review_flags), start=1):
         findings.append(
             Finding(
-                id=_stable_id(
+                id=stable_id(
+                    "profile-manual-review",
                     "profile-manual-review",
                     profile.candidate_id,
                     profile.application_id,
@@ -453,7 +457,7 @@ def _select_routing_category(
             if any(_is_blocking_missing_mandatory(finding) for finding in findings):
                 return category
         elif category == RoutingCategory.EEO_COMPLIANCE_REVIEW:
-            if any(_is_eeo_finding(finding) for finding in findings):
+            if any(_is_eeo_routing_signal(finding) for finding in findings):
                 return category
         elif category == RoutingCategory.DUPLICATE_MULTI_ROLE_REVIEW:
             if any(_is_duplicate_or_multi_role_finding(finding) for finding in findings):
@@ -488,7 +492,7 @@ def _route_findings(
 ) -> list[Finding]:
     predicates = {
         RoutingCategory.RECOMMENDED_REJECTION_HUMAN_APPROVAL: _is_blocking_missing_mandatory,
-        RoutingCategory.EEO_COMPLIANCE_REVIEW: _is_eeo_finding,
+        RoutingCategory.EEO_COMPLIANCE_REVIEW: _is_eeo_routing_signal,
         RoutingCategory.DUPLICATE_MULTI_ROLE_REVIEW: _is_duplicate_or_multi_role_finding,
         RoutingCategory.EMPLOYMENT_HISTORY_INCONSISTENCY: _is_employment_inconsistency_finding,
         RoutingCategory.CREDENTIAL_VERIFICATION_PENDING: _is_pending_credential_finding,
@@ -559,8 +563,8 @@ def _dedupe_key(finding: Finding) -> str:
             finding.application_id or "",
             finding.category.value,
             finding.severity.value,
-            _normalize_text(finding.title),
-            _normalize_text(finding.source_agent),
+            normalize_token_text(finding.title),
+            normalize_token_text(finding.source_agent),
         )
     )
 
@@ -575,7 +579,7 @@ def _finding_sort_key(finding: Finding) -> tuple[int, str, str, str, str, str]:
         finding.candidate_id or "",
         finding.application_id or "",
         finding.category.value,
-        _normalize_text(finding.title),
+        normalize_token_text(finding.title),
         finding.id,
     )
 
@@ -610,7 +614,7 @@ def _is_blocking_missing_mandatory(finding: Finding) -> bool:
     )
 
 
-def _is_eeo_finding(finding: Finding) -> bool:
+def _is_eeo_routing_signal(finding: Finding) -> bool:
     return finding.category == FindingCategory.COMPLIANCE
 
 
@@ -678,13 +682,13 @@ def _is_high_match(match: CandidateMatchResult | None) -> bool:
 
 
 def _is_clean_standard_application(context: BundleContext) -> bool:
-    scenario_type = _normalize_text(context.scenario.type)
-    tags = {_normalize_text(tag) for tag in context.scenario.tags}
+    scenario_type = normalize_token_text(context.scenario.type)
+    tags = {normalize_token_text(tag) for tag in context.scenario.tags}
     return scenario_type == "clean standard application" or "clean" in tags
 
 
 def _finding_text(finding: Finding) -> str:
-    return _normalize_text(
+    return normalize_token_text(
         " ".join(
             part
             for part in (
@@ -698,16 +702,6 @@ def _finding_text(finding: Finding) -> str:
             if part
         )
     )
-
-
-def _normalize_text(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
-
-
-def _stable_id(*parts: str) -> str:
-    raw = "|".join(_normalize_text(part) for part in parts)
-    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
-    return f"{parts[0]}-{digest}"
 
 
 def _build_summary(

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +7,7 @@ from pydantic import BaseModel
 
 from icshps.schemas.run import ArtifactStatus, RunArtifactManifest
 from icshps.services.run_scaffolding import RunScaffold
+from icshps.utils.file_io import read_json_object, write_json
 
 
 def artifact_path(scaffold: RunScaffold, artifact_key: str) -> Path:
@@ -79,26 +79,4 @@ def mark_artifacts_created(
     write_json(
         scaffold.artifact_manifest_path,
         manifest.model_copy(update={"artifacts": artifacts}),
-    )
-
-
-def read_json_object(path: Path) -> dict[str, Any]:
-    """Read a JSON object from disk with a clear validation error."""
-
-    raw = json.loads(path.read_text(encoding="utf-8"))
-
-    if not isinstance(raw, dict):
-        raise ValueError(f"Expected JSON object at {path}")
-
-    return raw
-
-
-def write_json(path: Path, payload: BaseModel | dict[str, Any]) -> None:
-    """Write deterministic, pretty JSON for run artifacts."""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = payload.model_dump(mode="json") if isinstance(payload, BaseModel) else payload
-    path.write_text(
-        json.dumps(data, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )

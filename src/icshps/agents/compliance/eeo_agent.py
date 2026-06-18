@@ -4,9 +4,14 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
-from icshps.schemas import EvidenceRef, FindingCategory, Severity, Finding, FindingsArtifact
+from icshps.schemas import (
+    EvidenceRef,
+    FindingCategory,
+    Severity,
+    Finding,
+    FindingsArtifact,
+)
+from icshps.utils.file_io import read_yaml_object
 
 AGENT_NAME = "eeo_compliance_agent_v1"
 
@@ -145,9 +150,13 @@ def _experience_level_findings(
     jd_text: str,
 ) -> list[Finding]:
     level_text = (job_title or "").lower()
-    entry_level_role = any(token in level_text for token in ("intern", "junior", "entry"))
+    entry_level_role = any(
+        token in level_text for token in ("intern", "junior", "entry")
+    )
     findings: list[Finding] = []
-    pattern = re.compile(r"\b(\d{1,2})\+?\s+years?\s+(of\s+)?experience\b", re.IGNORECASE)
+    pattern = re.compile(
+        r"\b(\d{1,2})\+?\s+years?\s+(of\s+)?experience\b", re.IGNORECASE
+    )
 
     for line_number, line in enumerate(jd_text.splitlines(), start=1):
         for match in pattern.finditer(line):
@@ -180,7 +189,11 @@ def _experience_level_findings(
 
 
 def _load_policy_rules(policy_path: Path | None) -> tuple[_Rule, ...]:
-    if policy_path is None or not policy_path.exists() or policy_path.stat().st_size == 0:
+    if (
+        policy_path is None
+        or not policy_path.exists()
+        or policy_path.stat().st_size == 0
+    ):
         return ()
 
     payload = _load_policy_payload(policy_path)
@@ -201,7 +214,9 @@ def _load_policy_rules(policy_path: Path | None) -> tuple[_Rule, ...]:
                 category=str(item.get("category", "policy_defined_language")),
                 pattern=re.compile(re.escape(phrase), re.IGNORECASE),
                 title=str(item.get("title", "Policy-defined EEO language")),
-                reason=str(item.get("reason", "Phrase is listed in the EEO policy pack.")),
+                reason=str(
+                    item.get("reason", "Phrase is listed in the EEO policy pack.")
+                ),
                 severity=Severity(str(item.get("severity", Severity.WARNING.value))),
             )
         )
@@ -210,5 +225,4 @@ def _load_policy_rules(policy_path: Path | None) -> tuple[_Rule, ...]:
 
 
 def _load_policy_payload(policy_path: Path) -> dict[str, object]:
-    payload = yaml.safe_load(policy_path.read_text(encoding="utf-8")) or {}
-    return payload if isinstance(payload, dict) else {}
+    return read_yaml_object(policy_path)

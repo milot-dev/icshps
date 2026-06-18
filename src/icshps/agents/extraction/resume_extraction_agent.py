@@ -26,6 +26,8 @@ from icshps.schemas import (
     EvidenceRef,
 )
 from icshps.schemas.profile import CertificationRecord
+from icshps.utils.evidence import dedupe_evidence_refs
+from icshps.utils.text import normalize_whitespace, slugify
 
 EMAIL_RE = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
@@ -83,7 +85,9 @@ def extract_candidate_profile(
     source_path = Path(str(source_file))
 
     if should_use_synthetic_fallback(extracted_text=normalized_text):
-        trigger = "resume_text_empty" if not normalized_text else "resume_text_too_short"
+        trigger = (
+            "resume_text_empty" if not normalized_text else "resume_text_too_short"
+        )
         return build_synthetic_candidate_profile(
             candidate_id=candidate_id,
             application_id=application_id,
@@ -108,8 +112,12 @@ def extract_candidate_profile(
                 reason=fallback_reason_for_trigger("missing_required_profile_fields"),
             )
 
-        email = extract_regex_field(EMAIL_RE, normalized_text, source_path, EMAIL_CONFIDENCE)
-        phone = extract_regex_field(PHONE_RE, normalized_text, source_path, PHONE_CONFIDENCE)
+        email = extract_regex_field(
+            EMAIL_RE, normalized_text, source_path, EMAIL_CONFIDENCE
+        )
+        phone = extract_regex_field(
+            PHONE_RE, normalized_text, source_path, PHONE_CONFIDENCE
+        )
         location = extract_location(lines, source_path)
         skills = extract_skills(normalized_text, source_path)
         certifications = extract_certifications(normalized_text, source_path)
@@ -135,7 +143,9 @@ def extract_candidate_profile(
             employment_history=employment_history,
         )
         extraction_confidence = calculate_profile_confidence(section_confidence)
-        section_confidence_bands = calculate_section_confidence_bands(section_confidence)
+        section_confidence_bands = calculate_section_confidence_bands(
+            section_confidence
+        )
         manual_review_flags = [error.message for error in extraction_errors]
     except Exception as exc:
         return build_synthetic_candidate_profile(
@@ -381,6 +391,7 @@ def extract_certifications(text: str, source_path: Path) -> list[CertificationRe
 
     return certs
 
+
 def build_extraction_errors(
     *,
     email: ExtractedField | None,
@@ -492,8 +503,7 @@ def has_extracted_values_missing_evidence(
         return True
 
     return any(
-        record.company and not record.evidence
-        for record in employment_history or []
+        record.company and not record.evidence for record in employment_history or []
     )
 
 
@@ -532,27 +542,6 @@ def build_evidence_index(
     return dedupe_evidence_refs(evidence_refs)
 
 
-def dedupe_evidence_refs(evidence_refs: list[EvidenceRef]) -> list[EvidenceRef]:
-    deduped = []
-    seen = set()
-
-    for evidence in evidence_refs:
-        key = evidence.evidence_id or (
-            str(evidence.source_path),
-            evidence.source_type,
-            evidence.page_number,
-            evidence.section,
-            evidence.text_snippet,
-        )
-        if key in seen:
-            continue
-
-        seen.add(key)
-        deduped.append(evidence)
-
-    return deduped
-
-
 def make_evidence(
     source_path: Path,
     section: str,
@@ -562,7 +551,7 @@ def make_evidence(
     evidence_id: str,
     field_path: str,
 ) -> EvidenceRef:
-    normalized_snippet = re.sub(r"\s+", " ", snippet).strip()[:240]
+    normalized_snippet = normalize_whitespace(snippet)[:240]
     bounding_box_result = find_text_bounding_box(source_path, normalized_snippet)
 
     return EvidenceRef(
@@ -613,7 +602,7 @@ def make_skill_evidence(
         "skills",
         skill_name,
         confidence,
-        evidence_id=f"ev_skill_{slugify_evidence_component(skill_name)}_001",
+        evidence_id=f"ev_skill_{slugify(skill_name)}_001",
         field_path=f"skills[{skill_index}]",
     )
 
@@ -674,8 +663,3 @@ def contact_field_for_pattern(pattern: re.Pattern[str]) -> str:
         return "phone"
 
     return "contact"
-
-
-def slugify_evidence_component(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
-    return slug or "unknown"
