@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from icshps.schemas import (
     CandidateProfile,
     EmploymentRecord,
@@ -14,6 +12,9 @@ from icshps.schemas import (
     FindingsArtifact,
     Severity,
 )
+from icshps.utils.file_io import read_yaml_object
+from icshps.utils.dates import month_index
+from icshps.utils.text import normalize_lookup_key
 
 AGENT_NAME = "linkedin_consistency_agent_v1"
 
@@ -87,15 +88,16 @@ def _linkedin_positions_for_candidate(
     ):
         return []
 
-    payload = yaml.safe_load(linkedin_profiles_path.read_text(encoding="utf-8")) or {}
-    if not isinstance(payload, dict):
-        return []
+    payload = read_yaml_object(linkedin_profiles_path)
 
     if str(payload.get("candidate_id", "")) == candidate_id:
         return _positions_from(payload)
 
     for candidate in payload.get("candidates", []):
-        if isinstance(candidate, dict) and str(candidate.get("candidate_id", "")) == candidate_id:
+        if (
+            isinstance(candidate, dict)
+            and str(candidate.get("candidate_id", "")) == candidate_id
+        ):
             return _positions_from(candidate)
 
     return []
@@ -163,9 +165,12 @@ def _chronology_findings(
 
     for index, current in enumerate(employments[:-1]):
         next_role = employments[index + 1]
-        if _month_index(current.start_date) is None or _month_index(next_role.start_date) is None:
+        if (
+            month_index(current.start_date) is None
+            or month_index(next_role.start_date) is None
+        ):
             continue
-        if _month_index(current.start_date) < _month_index(next_role.start_date):
+        if month_index(current.start_date) < month_index(next_role.start_date):
             findings.append(
                 Finding(
                     id=f"linkedin-reverse-chronology-{starting_index + len(findings):03d}",
@@ -195,14 +200,5 @@ def _position_date_range(position: dict[str, Any]) -> tuple[str | None, str | No
     return position.get("start_date"), position.get("end_date")
 
 
-def _month_index(value: str | None) -> int | None:
-    if not value:
-        return None
-    parts = value.split("-")
-    if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
-        return None
-    return int(parts[0]) * 12 + int(parts[1])
-
-
 def _normalize(value: str | None) -> str:
-    return " ".join((value or "").lower().replace("-", " ").split())
+    return normalize_lookup_key(value)

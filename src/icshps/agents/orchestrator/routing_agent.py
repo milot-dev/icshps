@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import re
 from collections.abc import Iterable, Sequence
 
 from icshps.agents.compliance.eeo_agent import build_eeo_compliance_findings
@@ -20,6 +18,8 @@ from icshps.schemas import (
     Severity,
 )
 from icshps.services import RunScaffold, read_json_artifact
+from icshps.utils.ids import stable_id
+from icshps.utils.text import normalize_token_text
 
 LOW_CONFIDENCE_THRESHOLD = 0.70
 ADVANCE_SCORE_THRESHOLD = 80.0
@@ -44,7 +44,11 @@ _ROUTE_PRIORITY: tuple[RoutingCategory, ...] = (
 )
 
 
-def build_final_decision_from_run(scaffold: RunScaffold) -> FinalDecisionArtifact:
+def build_final_decision_from_run(
+    scaffold: RunScaffold,
+    *,
+    candidate_profiles: Sequence[CandidateProfile] | None = None,
+) -> FinalDecisionArtifact:
     """
     Build in-memory routing decisions from an existing run folder.
 
@@ -75,6 +79,7 @@ def build_final_decision_from_run(scaffold: RunScaffold) -> FinalDecisionArtifac
     return build_final_decision_artifact(
         context=context,
         candidate_profile=candidate_profile,
+        candidate_profiles=list(candidate_profiles or []),
         match_results=match_results,
         intake_findings=intake_findings,
         verification_findings=verification_findings,
@@ -87,6 +92,7 @@ def build_final_decision_artifact(
     *,
     context: BundleContext,
     candidate_profile: CandidateProfile | None = None,
+    candidate_profiles: list[CandidateProfile] | None = None,
     match_results: MatchResultsArtifact | None = None,
     intake_findings: FindingsArtifact | None = None,
     verification_findings: FindingsArtifact | None = None,
@@ -101,6 +107,7 @@ def build_final_decision_artifact(
 
     findings = collect_findings(
         candidate_profile=candidate_profile,
+        candidate_profiles=candidate_profiles,
         match_results=match_results,
         intake_findings=intake_findings,
         verification_findings=verification_findings,
@@ -111,6 +118,7 @@ def build_final_decision_artifact(
     decisions = build_candidate_routing_decisions(
         context=context,
         candidate_profile=candidate_profile,
+        candidate_profiles=candidate_profiles,
         match_results=match_results,
         findings=unified_findings,
     )
@@ -128,6 +136,7 @@ def build_final_decision_artifact(
 def collect_findings(
     *,
     candidate_profile: CandidateProfile | None = None,
+    candidate_profiles: list[CandidateProfile] | None = None,
     match_results: MatchResultsArtifact | None = None,
     intake_findings: FindingsArtifact | None = None,
     verification_findings: FindingsArtifact | None = None,
@@ -157,8 +166,12 @@ def collect_findings(
             findings.extend(result.findings)
             findings.extend(_missing_mandatory_findings(result))
 
-    if candidate_profile is not None:
-        findings.extend(_candidate_profile_findings(candidate_profile))
+    profiles = _ordered_profiles(candidate_profiles or [])
+    if not profiles and candidate_profile is not None:
+        profiles = [candidate_profile]
+
+    for profile in profiles:
+        findings.extend(_candidate_profile_findings(profile))
 
     return findings
 
@@ -195,6 +208,7 @@ def build_candidate_routing_decisions(
     *,
     context: BundleContext,
     candidate_profile: CandidateProfile | None = None,
+    candidate_profiles: list[CandidateProfile] | None = None,
     match_results: MatchResultsArtifact | None = None,
     findings: Sequence[Finding],
 ) -> list[CandidateRoutingDecision]:
@@ -206,7 +220,12 @@ def build_candidate_routing_decisions(
     """
 
     matches_by_application = _match_results_by_application(match_results)
-    candidates = _routing_candidates(context, match_results, candidate_profile)
+    candidates = _routing_candidates(
+        context,
+        match_results,
+        candidate_profile,
+        candidate_profiles or [],
+    )
     decisions: list[CandidateRoutingDecision] = []
 
     for candidate in candidates:
@@ -273,7 +292,8 @@ def _missing_mandatory_findings(result: CandidateMatchResult) -> list[Finding]:
     for requirement in sorted(result.missing_mandatory_requirements):
         findings.append(
             Finding(
-                id=_stable_id(
+                id=stable_id(
+                    "match-missing-mandatory",
                     "match-missing-mandatory",
                     result.candidate_id,
                     result.application_id,
@@ -302,7 +322,8 @@ def _candidate_profile_findings(profile: CandidateProfile) -> list[Finding]:
     if profile.extraction_confidence < LOW_CONFIDENCE_THRESHOLD:
         findings.append(
             Finding(
-                id=_stable_id(
+                id=stable_id(
+                    "profile-low-confidence",
                     "profile-low-confidence",
                     profile.candidate_id,
                     profile.application_id,
@@ -329,7 +350,8 @@ def _candidate_profile_findings(profile: CandidateProfile) -> list[Finding]:
     if profile.synthetic_fallback_used:
         findings.append(
             Finding(
-                id=_stable_id(
+                id=stable_id(
+                    "profile-synthetic-fallback",
                     "profile-synthetic-fallback",
                     profile.candidate_id,
                     profile.application_id,
@@ -352,7 +374,8 @@ def _candidate_profile_findings(profile: CandidateProfile) -> list[Finding]:
     for index, flag in enumerate(sorted(profile.manual_review_flags), start=1):
         findings.append(
             Finding(
-                id=_stable_id(
+                id=stable_id(
+                    "profile-manual-review",
                     "profile-manual-review",
                     profile.candidate_id,
                     profile.application_id,
@@ -380,6 +403,7 @@ def _routing_candidates(
     context: BundleContext,
     match_results: MatchResultsArtifact | None,
     candidate_profile: CandidateProfile | None,
+    candidate_profiles: list[CandidateProfile],
 ) -> list[CandidateApplication]:
     candidates_by_key = {
         (candidate.id, candidate.application_id): candidate for candidate in context.candidates
@@ -408,6 +432,17 @@ def _routing_candidates(
                 resume_file=context.bundle_path,
             )
 
+    for profile in candidate_profiles:
+        key = (profile.candidate_id, profile.application_id)
+        if key not in candidates_by_key:
+            candidates_by_key[key] = CandidateApplication(
+                id=profile.candidate_id,
+                application_id=profile.application_id,
+                name=profile.full_name.value,
+                target_job_id=profile.role_id,
+                resume_file=context.bundle_path,
+            )
+
     return [candidates_by_key[key] for key in sorted(candidates_by_key)]
 
 
@@ -422,7 +457,7 @@ def _select_routing_category(
             if any(_is_blocking_missing_mandatory(finding) for finding in findings):
                 return category
         elif category == RoutingCategory.EEO_COMPLIANCE_REVIEW:
-            if any(_is_eeo_finding(finding) for finding in findings):
+            if any(_is_eeo_routing_signal(finding) for finding in findings):
                 return category
         elif category == RoutingCategory.DUPLICATE_MULTI_ROLE_REVIEW:
             if any(_is_duplicate_or_multi_role_finding(finding) for finding in findings):
@@ -457,7 +492,7 @@ def _route_findings(
 ) -> list[Finding]:
     predicates = {
         RoutingCategory.RECOMMENDED_REJECTION_HUMAN_APPROVAL: _is_blocking_missing_mandatory,
-        RoutingCategory.EEO_COMPLIANCE_REVIEW: _is_eeo_finding,
+        RoutingCategory.EEO_COMPLIANCE_REVIEW: _is_eeo_routing_signal,
         RoutingCategory.DUPLICATE_MULTI_ROLE_REVIEW: _is_duplicate_or_multi_role_finding,
         RoutingCategory.EMPLOYMENT_HISTORY_INCONSISTENCY: _is_employment_inconsistency_finding,
         RoutingCategory.CREDENTIAL_VERIFICATION_PENDING: _is_pending_credential_finding,
@@ -528,8 +563,8 @@ def _dedupe_key(finding: Finding) -> str:
             finding.application_id or "",
             finding.category.value,
             finding.severity.value,
-            _normalize_text(finding.title),
-            _normalize_text(finding.source_agent),
+            normalize_token_text(finding.title),
+            normalize_token_text(finding.source_agent),
         )
     )
 
@@ -544,7 +579,7 @@ def _finding_sort_key(finding: Finding) -> tuple[int, str, str, str, str, str]:
         finding.candidate_id or "",
         finding.application_id or "",
         finding.category.value,
-        _normalize_text(finding.title),
+        normalize_token_text(finding.title),
         finding.id,
     )
 
@@ -553,6 +588,10 @@ def _ordered_match_results(
     results: Iterable[CandidateMatchResult],
 ) -> list[CandidateMatchResult]:
     return sorted(results, key=lambda result: (result.candidate_id, result.application_id))
+
+
+def _ordered_profiles(profiles: Iterable[CandidateProfile]) -> list[CandidateProfile]:
+    return sorted(profiles, key=lambda profile: (profile.candidate_id, profile.application_id))
 
 
 def _match_results_by_application(
@@ -575,7 +614,7 @@ def _is_blocking_missing_mandatory(finding: Finding) -> bool:
     )
 
 
-def _is_eeo_finding(finding: Finding) -> bool:
+def _is_eeo_routing_signal(finding: Finding) -> bool:
     return finding.category == FindingCategory.COMPLIANCE
 
 
@@ -643,13 +682,13 @@ def _is_high_match(match: CandidateMatchResult | None) -> bool:
 
 
 def _is_clean_standard_application(context: BundleContext) -> bool:
-    scenario_type = _normalize_text(context.scenario.type)
-    tags = {_normalize_text(tag) for tag in context.scenario.tags}
+    scenario_type = normalize_token_text(context.scenario.type)
+    tags = {normalize_token_text(tag) for tag in context.scenario.tags}
     return scenario_type == "clean standard application" or "clean" in tags
 
 
 def _finding_text(finding: Finding) -> str:
-    return _normalize_text(
+    return normalize_token_text(
         " ".join(
             part
             for part in (
@@ -663,16 +702,6 @@ def _finding_text(finding: Finding) -> str:
             if part
         )
     )
-
-
-def _normalize_text(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
-
-
-def _stable_id(*parts: str) -> str:
-    raw = "|".join(_normalize_text(part) for part in parts)
-    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
-    return f"{parts[0]}-{digest}"
 
 
 def _build_summary(

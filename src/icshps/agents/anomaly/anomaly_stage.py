@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from icshps.agents.anomaly.anomaly_detection_agent import build_anomaly_findings
 from icshps.schemas import BundleContext, CandidateProfile
 from icshps.services import (
     AgentStageResult,
     RunScaffold,
-    read_json_artifact,
+    read_candidate_profiles,
     write_json_artifact,
 )
 
@@ -14,18 +16,15 @@ def run_anomaly_stage(
     *,
     scaffold: RunScaffold,
     context: BundleContext,
+    candidate_profiles: Sequence[CandidateProfile] | None = None,
 ) -> AgentStageResult:
     """Run the orchestration-facing anomaly findings artifact stage."""
 
     try:
-        profile_payload = read_json_artifact(
-            scaffold=scaffold,
-            artifact_key="candidate_profile",
-        )
         profiles = (
-            [CandidateProfile.model_validate(profile_payload)]
-            if profile_payload is not None
-            else []
+            list(candidate_profiles)
+            if candidate_profiles is not None
+            else read_candidate_profiles(scaffold)
         )
         artifact = build_anomaly_findings(
             run_id=scaffold.run_id,
@@ -39,10 +38,7 @@ def run_anomaly_stage(
             path=None,
             created_artifacts=(),
             skipped_stages=("anomaly_findings",),
-            warnings=(
-                "Anomaly stage skipped after controlled anomaly error: "
-                f"{exc}",
-            ),
+            warnings=(f"Anomaly stage skipped after controlled anomaly error: {exc}",),
         )
 
     artifact_path = write_json_artifact(

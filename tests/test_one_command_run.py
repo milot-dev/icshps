@@ -65,6 +65,38 @@ def test_one_command_run_fails_for_invalid_bundle(tmp_path: Path) -> None:
     assert "does not exist" in result.stderr
 
 
+def test_one_command_run_accepts_single_pdf_resume(tmp_path: Path) -> None:
+    resume_path = Path(
+        "data/hiring_bundles/clean_standard_application/resumes/"
+        "candidate_clean_001_resume.pdf"
+    )
+    runs_root = tmp_path / "runs"
+    run_id = "pytest_single_pdf"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_pipeline.py",
+            str(resume_path),
+            "--runs-root",
+            str(runs_root),
+            "--run-id",
+            run_id,
+            "--reset",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    run_dir = runs_root / run_id
+    assert run_dir.exists()
+
+    for artifact_path in FINAL_ARTIFACTS:
+        assert (run_dir / artifact_path).exists(), artifact_path
+
+
 def test_repeated_run_with_same_run_id_is_deterministic(tmp_path: Path) -> None:
     bundle_path = Path("data/hiring_bundles/clean_standard_application")
     runs_root = tmp_path / "runs"

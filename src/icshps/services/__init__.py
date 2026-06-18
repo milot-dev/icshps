@@ -16,6 +16,7 @@ from icshps.services.bundle_loader import (
     load_hiring_bundle,
     snapshot_manifest_to_run,
 )
+from icshps.services.candidate_artifacts import read_candidate_profiles
 from icshps.services.compliance_flags_writer import (
     build_compliance_flags_markdown,
     write_compliance_flags_md,
@@ -37,6 +38,7 @@ from icshps.services.final_artifacts import (
     write_metrics,
     write_shortlist_csv,
 )
+
 __all__ = [
     "AgentStageResult",
     "ArtifactCatalogItem",
@@ -50,6 +52,7 @@ __all__ = [
     "mark_artifacts_created",
     "prepare_run_scaffold",
     "read_artifact_catalog",
+    "read_candidate_profiles",
     "read_json_artifact",
     "snapshot_manifest_to_run",
     "write_compliance_flags_md",

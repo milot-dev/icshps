@@ -53,6 +53,12 @@ def test_end_to_end_workflow_creates_current_backend_artifacts(tmp_path: Path) -
     assert (result.run_dir / "artifacts" / "shortlist.csv").exists()
     assert (result.run_dir / "artifacts" / "hiring_packet.json").exists()
 
+    final_decision = read_json(result.run_dir / "artifacts" / "final_decision.json")
+    assert any(
+        finding["category"] == "triage"
+        for finding in final_decision["findings"]
+    )
+
 
 def test_end_to_end_workflow_marks_artifact_manifest_correctly(tmp_path: Path) -> None:
     bundle_path = build_bundle(tmp_path)
@@ -69,6 +75,7 @@ def test_end_to_end_workflow_marks_artifact_manifest_correctly(tmp_path: Path) -
     assert artifacts["compliance_flags"]["status"] == "created"
     assert artifacts["verification_findings"]["status"] == "created"
     assert artifacts["anomaly_findings"]["status"] == "created"
+    assert "triage_findings" not in artifacts
 
     assert artifacts["final_decision"]["status"] == "created"
     assert artifacts["shortlist"]["status"] == "created"
@@ -132,6 +139,51 @@ def test_end_to_end_workflow_outputs_are_deterministic(tmp_path: Path) -> None:
     assert first.match_scores_path.read_text(encoding="utf-8") == (
         second.match_scores_path.read_text(encoding="utf-8")
     )
+
+
+def test_end_to_end_workflow_processes_multiple_candidates(tmp_path: Path) -> None:
+    bundle_path = build_bundle(tmp_path)
+    manifest_path = bundle_path / "manifest.yaml"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8").replace(
+            """  - id: candidate_001
+    application_id: app_001
+    name: Sample Candidate
+    target_job_id: job_ai_backend_engineer_001
+    resume_file: resumes/candidate_001_resume.pdf
+""",
+            """  - id: candidate_001
+    application_id: app_001
+    name: Sample Candidate
+    target_job_id: job_ai_backend_engineer_001
+    resume_file: resumes/candidate_001_resume.pdf
+  - id: candidate_002
+    application_id: app_002
+    name: Second Candidate
+    target_job_id: job_ai_backend_engineer_001
+    resume_file: resumes/candidate_001_resume.pdf
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+
+    assert result.ok
+    assert result.run_dir is not None
+
+    matches = read_json(result.run_dir / "artifacts" / "match_scores.json")
+    decision = read_json(result.run_dir / "artifacts" / "final_decision.json")
+    metrics = read_json(result.run_dir / "artifacts" / "metrics.json")
+    shortlist_rows = (
+        result.run_dir / "artifacts" / "shortlist.csv"
+    ).read_text(encoding="utf-8").splitlines()
+
+    assert len(matches["results"]) == 2
+    assert len(decision["decisions"]) == 2
+    assert metrics["candidate_count"] == 2
+    assert metrics["decision_count"] == 2
+    assert len(shortlist_rows) == 3
 
 
 def read_json(path: Path) -> dict:

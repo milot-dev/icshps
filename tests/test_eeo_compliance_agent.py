@@ -60,3 +60,4 @@ risky_phrases:
     assert len(artifact.findings) == 1
     assert artifact.findings[0].id == "eeo-policy-001-001"
     assert "Culture-fit" in artifact.findings[0].reason
+

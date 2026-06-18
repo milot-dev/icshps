@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,7 @@ class AgentStageResult:
     created_artifacts: tuple[str, ...]
     skipped_stages: tuple[str, ...]
     warnings: tuple[str, ...]
+    payload: Any | None = None
 
     @property
     def created(self) -> bool:

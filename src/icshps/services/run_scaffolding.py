@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import json
-import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-from pydantic import BaseModel
 
 from icshps.schemas.run import (
     ArtifactRef,
@@ -16,6 +12,8 @@ from icshps.schemas.run import (
     RunArtifactManifest,
     RunMetadata,
 )
+from icshps.utils.file_io import append_jsonl, write_json, write_text
+from icshps.utils.ids import deterministic_name_id
 
 
 @dataclass(frozen=True)
@@ -88,30 +86,26 @@ def prepare_run_scaffold(
 
     artifact_manifest = build_artifact_manifest(scaffold)
 
-    _write_json(scaffold.metadata_path, metadata)
-    _write_json(scaffold.artifact_manifest_path, artifact_manifest)
+    write_json(scaffold.metadata_path, metadata)
+    write_json(scaffold.artifact_manifest_path, artifact_manifest)
 
-    _write_text(
+    write_text(
         scaffold.artifacts_dir / "audit_log.md",
         build_initial_audit_log(scaffold),
     )
 
-    _write_json(
+    write_json(
         scaffold.artifacts_dir / "metrics.json",
         build_initial_metrics(scaffold),
     )
 
-    _write_text(
+    append_jsonl(
         scaffold.logs_dir / "audit_events.jsonl",
-        json.dumps(
-            {
-                "event": "run_scaffold_created",
-                "run_id": scaffold.run_id,
-                "status": "created",
-            },
-            sort_keys=True,
-        )
-        + "\n",
+        {
+            "event": "run_scaffold_created",
+            "run_id": scaffold.run_id,
+            "status": "created",
+        },
     )
 
     return scaffold
@@ -145,12 +139,7 @@ def compute_bundle_fingerprint(bundle_path: Path) -> str:
 def build_deterministic_run_id(bundle_name: str, input_fingerprint: str) -> str:
     """Build a readable and stable run ID."""
 
-    slug = re.sub(r"[^a-zA-Z0-9]+", "_", bundle_name.strip().lower()).strip("_")
-
-    if not slug:
-        slug = "bundle"
-
-    return f"{slug}_{input_fingerprint[:8]}"
+    return deterministic_name_id(bundle_name, input_fingerprint)
 
 
 def build_artifact_manifest(scaffold: RunScaffold) -> RunArtifactManifest:
@@ -319,24 +308,3 @@ def _safe_reset_run_dir(run_dir: Path, runs_root: Path) -> None:
 
     if run_dir.exists():
         shutil.rmtree(run_dir)
-
-
-def _write_json(path: Path, payload: BaseModel | dict[str, Any]) -> None:
-    """Write stable, pretty JSON for deterministic demo outputs."""
-
-    if isinstance(payload, BaseModel):
-        data = payload.model_dump(mode="json")
-    else:
-        data = payload
-
-    path.write_text(
-        json.dumps(data, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-
-def _write_text(path: Path, content: str) -> None:
-    """Write UTF-8 text with parent directory creation."""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
