@@ -217,6 +217,7 @@ def write_metrics(
 ) -> Path:
     """Write deterministic summary metrics for the completed local run."""
 
+    existing_metrics = read_json_artifact(scaffold=scaffold, artifact_key="metrics") or {}
     routing_counts = Counter(
         decision.routing_category.value for decision in final_decision.decisions
     )
@@ -231,6 +232,7 @@ def write_metrics(
     ]
 
     payload: dict[str, Any] = {
+        **existing_metrics,
         "run_id": final_decision.run_id,
         "bundle_id": final_decision.bundle_id,
         "scenario_type": final_decision.scenario_type,

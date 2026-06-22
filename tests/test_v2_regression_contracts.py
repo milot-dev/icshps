@@ -119,6 +119,12 @@ def test_v2_metrics_defaults_exist_after_completed_run(tmp_path: Path) -> None:
     for key, expected_value in V2_METRIC_DEFAULTS.items():
         assert metrics[key] == expected_value
 
+    llm_recovery = metrics["extraction"]["llm_recovery"]
+    assert metrics["extraction"]["candidate_profile_written"] is True
+    assert llm_recovery["enabled"] is False
+    assert llm_recovery["called"] is False
+    assert "by_candidate" in llm_recovery
+
 
 def test_audit_log_includes_v2_optional_feature_status(tmp_path: Path) -> None:
     result = run_langgraph_workflow(
