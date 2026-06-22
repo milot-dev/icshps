@@ -36,8 +36,7 @@ The repository includes:
 - deterministic run scaffolding
 - Hiring Bundle loader and validation
 - Application Intake / Context Agent
-- deterministic end-to-end backend workflow
-- optional LangGraph orchestration path
+- deterministic LangGraph backend workflow
 - clean-PDF resume text extraction baseline
 - candidate profile extraction baseline
 - multi-candidate pipeline handling
@@ -114,7 +113,7 @@ runs/<run_id>/
 
 The pipeline runs through scaffolding, bundle loading, validation, intake, extraction, matching, verification, compliance checks, anomaly detection, exception triage, routing, and final artifact generation.
 
-The default engine remains the stable pure Python workflow. A minimal LangGraph engine is also available through `--engine langgraph`; it preserves the same deterministic stage order and calls the same existing stage runners.
+The backend pipeline uses LangGraph orchestration by default. The optional `--engine langgraph` flag is accepted for explicit runs; the previous pure-Python engine is no longer supported.
 
 All final routing recommendations are decision support outputs and require human approval.
 
@@ -132,17 +131,17 @@ ICSHPS/
 │
 ├── scripts/                         # Local CLI scripts for running and validating the pipeline
 │   ├── run_pipeline.py              # Main one command backend pipeline runner
-│   ├── run_end_to_end_workflow.py   # End to end workflow runner
 │   ├── validate_candidate_bundle.py # Single Hiring Bundle validation
 │   └── validate_scenario_bundles.py # MVP scenario validation
 │
 ├── src/
 │   └── icshps/
 │       ├── agents/                  # Agent and stage logic
-│       ├── graph/                   # Python and LangGraph workflow orchestration layer
-│       │   ├── workflow.py          # Stable deterministic MVP workflow
+│       ├── graph/                   # LangGraph workflow orchestration layer
+│       │   ├── result.py            # Shared workflow result contract
+│       │   ├── finalization.py      # Shared finalization helpers
 │       │   ├── state.py             # LangGraph runtime state definition
-│       │   └── langgraph_workflow.py # Optional LangGraph orchestration path
+│       │   └── langgraph_workflow.py # LangGraph runner and orchestration nodes
 │       ├── policies/                # Reserved policy configuration package
 │       ├── schemas/                 # Shared Pydantic schema contracts
 │       ├── services/                # Bundle loading, artifact writing, run scaffolding
@@ -178,7 +177,7 @@ Run the backend pipeline for a Hiring Bundle:
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset
 ```
 
-Run the same backend pipeline through LangGraph orchestration:
+Run the backend pipeline with an explicit LangGraph engine flag:
 
 ```bash
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset --engine langgraph

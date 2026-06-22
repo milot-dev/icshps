@@ -1,0 +1,13 @@
+{
+  "signals": [
+    {
+      "candidate_id": "candidate_v2_manual_review",
+      "signal": "future_demo_identity_review",
+      "severity": "info",
+      "requires_human_review": true
+    }
+  ],
+  "notes": [
+    "Future fraud demonstration mock only. Current pipeline must not create fraud_findings.json."
+  ]
+}

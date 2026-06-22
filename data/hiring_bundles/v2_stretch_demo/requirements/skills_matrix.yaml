@@ -1,0 +1,9 @@
+must_have:
+  - Python
+  - SQL
+nice_to_have:
+  - FastAPI
+  - LangGraph
+  - Data contracts
+minimum_years_experience: 2
+mandatory_certifications: []

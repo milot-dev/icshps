@@ -1,0 +1,8 @@
+mock_hris_system: local_demo
+payload_version: 1.0
+employees:
+  - employee_id: emp_demo_001
+    name: Existing Local Employee
+    role: AI Backend Engineer
+notes:
+  - Local mock only. No HRIS system is queried or updated.

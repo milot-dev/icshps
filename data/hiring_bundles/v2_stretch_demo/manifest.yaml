@@ -1,0 +1,49 @@
+manifest_version: '1.0'
+bundle:
+  id: v2_stretch_demo
+  name: V2 Stretch Demo
+  description: Controlled local demo fixture for v2 optional artifact readiness.
+scenario:
+  id: scenario_v2_stretch_demo
+  type: v2_stretch_demo
+  expected_routing: "Recommended rejection \u2014 human approval required"
+  tags:
+  - v2
+  - stretch
+  - demo
+job:
+  id: job_ai_backend_engineer_001
+  title: AI Backend Engineer
+  department: Engineering
+  location: Local Demo
+  employment_type: Full-time
+candidates:
+- id: candidate_v2_good
+  application_id: app_v2_good
+  name: Nia Interview
+  target_job_id: job_ai_backend_engineer_001
+  resume_file: resumes/candidate_v2_good_resume.pdf
+- id: candidate_v2_manual_review
+  application_id: app_v2_manual_review
+  name: Omar Manual
+  target_job_id: job_ai_backend_engineer_001
+  resume_file: resumes/candidate_v2_manual_review_resume.pdf
+required_inputs:
+  job_description: job_description.md
+  skills_matrix: requirements/skills_matrix.yaml
+  eeo_policy: policies/eeo_policy.yaml
+  credential_rules: policies/credential_rules.yaml
+  hris_master: mock_data/hris_master.yaml
+optional_inputs:
+  linkedin_profiles: null
+  application_history: null
+  credential_evidence: null
+  application_volume: null
+execution:
+  deterministic: true
+  allow_missing_optional_inputs: true
+  require_human_review_for_final_decision: true
+notes:
+- V2 demo fixture reserves future scheduling, fraud, and ATS story data locally.
+- Future mock files are intentionally not referenced by the current manifest schema.
+- No LLM, OCR, calendar, ATS, HRIS, or background-check integration is performed.

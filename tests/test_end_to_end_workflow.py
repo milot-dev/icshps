@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from icshps.graph import run_end_to_end_workflow
+from icshps.graph import run_langgraph_workflow
 
 
 def test_end_to_end_workflow_creates_current_backend_artifacts(tmp_path: Path) -> None:
     bundle_path = build_bundle(tmp_path)
 
-    result = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    result = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     assert result.ok
     assert result.status == "completed"
@@ -63,7 +63,7 @@ def test_end_to_end_workflow_creates_current_backend_artifacts(tmp_path: Path) -
 def test_end_to_end_workflow_marks_artifact_manifest_correctly(tmp_path: Path) -> None:
     bundle_path = build_bundle(tmp_path)
 
-    result = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    result = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     manifest = read_json(result.artifact_manifest_path)  # type: ignore[arg-type]
     artifacts = manifest["artifacts"]
@@ -90,7 +90,7 @@ def test_end_to_end_workflow_stops_safely_when_intake_is_blocked(
     bundle_path = build_bundle(tmp_path)
     (bundle_path / "requirements" / "skills_matrix.yaml").unlink()
 
-    result = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    result = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     assert not result.ok
     assert result.status == "blocked"
@@ -113,8 +113,8 @@ def test_end_to_end_workflow_stops_safely_when_intake_is_blocked(
 def test_end_to_end_workflow_outputs_are_deterministic(tmp_path: Path) -> None:
     bundle_path = build_bundle(tmp_path)
 
-    first = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
-    second = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    first = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
+    second = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     assert first.run_id == second.run_id
     assert first.created_artifacts == second.created_artifacts
@@ -167,7 +167,7 @@ def test_end_to_end_workflow_processes_multiple_candidates(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    result = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    result = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     assert result.ok
     assert result.run_dir is not None
