@@ -26,7 +26,8 @@ The project focuses on controlled agent style processing, traceable evidence, sh
 ## Project State
 
 The project is a local deterministic MVP backend with expanded
-multi-candidate, triage, verification, and single-PDF demo support.
+multi-candidate, triage, verification, single-PDF demo, and optional
+LLM-assisted extraction recovery support.
 
 The repository includes:
 
@@ -40,6 +41,8 @@ The repository includes:
 - clean-PDF resume text extraction baseline
 - candidate profile extraction baseline
 - multi-candidate pipeline handling
+- persisted multi-profile extraction artifacts
+- optional LangChain/OpenAI extraction recovery for weak deterministic parses
 - synthetic profile fallback
 - JD matching baseline
 - EEO compliance checks baseline
@@ -98,6 +101,7 @@ runs/<run_id>/
   artifacts/
     intake_findings.json
     candidate_profile.json
+    candidate_profiles.json
     match_scores.json
     compliance_flags.md
     verification_findings.json
@@ -113,9 +117,13 @@ runs/<run_id>/
 
 The pipeline runs through scaffolding, bundle loading, validation, intake, extraction, matching, verification, compliance checks, anomaly detection, exception triage, routing, and final artifact generation.
 
+`candidate_profile.json` remains the compatibility artifact for the primary candidate profile. `candidate_profiles.json` stores the full ordered list of extracted candidate profiles for multi-candidate runs.
+
 The backend pipeline uses LangGraph orchestration by default. The optional `--engine langgraph` flag is accepted for explicit runs; the previous pure-Python engine is no longer supported.
 
 All final routing recommendations are decision support outputs and require human approval.
+
+Optional LLM extraction recovery is disabled by default. When enabled, deterministic extraction still runs first, and the LangChain/OpenAI helper is only used as a recovery path for low-confidence or incomplete resume extraction. LLM output is schema validated, evidence checked against resume text, rejected if it contains hiring or routing recommendation language, and falls back safely to deterministic extraction on provider, schema, or validation failure.
 
 ---
 
@@ -188,6 +196,23 @@ Run the backend pipeline for a single clean PDF resume:
 ```bash
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application/resumes/candidate_clean_001_resume.pdf --runs-root runs --reset
 ```
+
+Run the LLM recovery demo bundle:
+
+```bash
+uv run python scripts/run_pipeline.py data/hiring_bundles/llm_recovery_skill_demo --runs-root runs --reset
+```
+
+Enable optional LLM recovery in a local `.env` or terminal environment:
+
+```text
+ICSHPS_LLM_EXTRACTION_ENABLED=true
+OPENAI_API_KEY=your_key_here
+ICSHPS_LLM_EXTRACTION_MODEL=gpt-4o-mini
+ICSHPS_LLM_EXTRACTION_MAX_TOKENS=1200
+```
+
+Keep `ICSHPS_LLM_EXTRACTION_ENABLED=false` for deterministic-only runs, CI, offline development, or when no OpenAI quota is available. Do not commit local `.env` files.
 
 Run scenario validation for all available MVP Hiring Bundles:
 
