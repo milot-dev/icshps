@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 import re
 
 from icshps.agents.extraction.education_extractor import (
@@ -8,6 +9,12 @@ from icshps.agents.extraction.education_extractor import (
 )
 from icshps.agents.extraction.employment_history_extractor import (
     extract_employment_history,
+)
+from icshps.agents.extraction.llm_recovery import (
+    LLMRecoveryMetrics,
+    LLMRecoveryProvider,
+    apply_llm_recovery,
+    llm_recovery_enabled,
 )
 from icshps.agents.extraction.pdf_bounding_boxes import find_text_bounding_box
 from icshps.agents.extraction.synthetic_profile_fallback import (
@@ -80,11 +87,22 @@ def extract_candidate_profile(
     application_id: str,
     role_id: str,
     source_file: str | Path = "resume_text",
+    llm_provider: LLMRecoveryProvider | None = None,
+    llm_metrics: dict[str, Any] | None = None,
 ) -> CandidateProfile:
     normalized_text = normalize_resume_text(resume_text)
     source_path = Path(str(source_file))
 
     if should_use_synthetic_fallback(extracted_text=normalized_text):
+        _record_llm_metrics(
+            llm_metrics,
+            LLMRecoveryMetrics(
+                enabled=llm_recovery_enabled(),
+                final_extraction_mode="synthetic_fallback",
+                manual_review_flag_count=2,
+                skipped_reason="resume_text_unusable",
+            ),
+        )
         trigger = (
             "resume_text_empty" if not normalized_text else "resume_text_too_short"
         )
@@ -99,19 +117,6 @@ def extract_candidate_profile(
     try:
         lines = normalized_text.splitlines()
         full_name = extract_full_name(lines, source_path)
-
-        if should_use_synthetic_fallback(
-            extracted_text=normalized_text,
-            missing_required_fields=full_name.value is None,
-        ):
-            return build_synthetic_candidate_profile(
-                candidate_id=candidate_id,
-                application_id=application_id,
-                role_id=role_id,
-                source_file=source_file,
-                reason=fallback_reason_for_trigger("missing_required_profile_fields"),
-            )
-
         email = extract_regex_field(
             EMAIL_RE, normalized_text, source_path, EMAIL_CONFIDENCE
         )
@@ -146,8 +151,77 @@ def extract_candidate_profile(
         section_confidence_bands = calculate_section_confidence_bands(
             section_confidence
         )
-        manual_review_flags = [error.message for error in extraction_errors]
+
+        llm_recovery = apply_llm_recovery(
+            resume_text=normalized_text,
+            source_path=source_path,
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            location=location,
+            skills=skills,
+            employment_history=employment_history,
+            education=education,
+            certifications=certifications,
+            extraction_confidence=extraction_confidence,
+            section_confidence=section_confidence,
+            provider=llm_provider,
+        )
+        _record_llm_metrics(llm_metrics, llm_recovery.metrics)
+
+        full_name = llm_recovery.full_name
+        email = llm_recovery.email
+        phone = llm_recovery.phone
+        location = llm_recovery.location
+        skills = llm_recovery.skills
+        employment_history = llm_recovery.employment_history
+        education = llm_recovery.education
+        certifications = llm_recovery.certifications
+
+        if should_use_synthetic_fallback(
+            extracted_text=normalized_text,
+            missing_required_fields=full_name.value is None,
+        ):
+            llm_recovery.metrics.final_extraction_mode = "synthetic_fallback"
+            llm_recovery.metrics.manual_review_flag_count = 2
+            _record_llm_metrics(llm_metrics, llm_recovery.metrics)
+            return build_synthetic_candidate_profile(
+                candidate_id=candidate_id,
+                application_id=application_id,
+                role_id=role_id,
+                source_file=source_file,
+                reason=fallback_reason_for_trigger("missing_required_profile_fields"),
+            )
+
+        extraction_errors = build_extraction_errors(email=email, phone=phone)
+        section_confidence = calculate_section_confidence(
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            location=location,
+            skills=skills,
+            certifications=certifications,
+            education=education,
+            employment_history=employment_history,
+        )
+        extraction_confidence = calculate_profile_confidence(section_confidence)
+        section_confidence_bands = calculate_section_confidence_bands(
+            section_confidence
+        )
+        manual_review_flags = [
+            *[error.message for error in extraction_errors],
+            *llm_recovery.manual_review_flags,
+        ]
     except Exception as exc:
+        _record_llm_metrics(
+            llm_metrics,
+            LLMRecoveryMetrics(
+                enabled=llm_recovery_enabled(),
+                final_extraction_mode="synthetic_fallback",
+                manual_review_flag_count=2,
+                skipped_reason="deterministic_extraction_failed",
+            ),
+        )
         return build_synthetic_candidate_profile(
             candidate_id=candidate_id,
             application_id=application_id,
@@ -169,6 +243,9 @@ def extract_candidate_profile(
         employment_history=employment_history,
     ):
         manual_review_flags.append(MISSING_EVIDENCE_REVIEW_FLAG)
+
+    if llm_metrics is not None:
+        llm_metrics["manual_review_flag_count"] = len(manual_review_flags)
 
     return CandidateProfile(
         candidate_id=candidate_id,
@@ -663,3 +740,12 @@ def contact_field_for_pattern(pattern: re.Pattern[str]) -> str:
         return "phone"
 
     return "contact"
+
+
+def _record_llm_metrics(
+    metrics_payload: dict[str, Any] | None,
+    metrics: LLMRecoveryMetrics,
+) -> None:
+    if metrics_payload is not None:
+        metrics_payload.clear()
+        metrics_payload.update(metrics.as_dict())

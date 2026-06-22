@@ -1,4 +1,14 @@
+import pytest
+from pydantic import ValidationError
+
 from icshps.agents.extraction import resume_extraction_agent
+from icshps.agents.extraction.llm_recovery import (
+    DEFAULT_LLM_EXTRACTION_MAX_TOKENS,
+    LLMExtractionRecovery,
+    LLMExtractedField,
+    LLMSkill,
+    llm_recovery_max_tokens,
+)
 from icshps.agents.extraction.resume_extraction_agent import (
     extract_candidate_profile,
     has_extracted_values_missing_evidence,
@@ -458,3 +468,252 @@ def test_extract_candidate_profile_is_deterministic():
     )
 
     assert profile_1.model_dump() == profile_2.model_dump()
+
+
+def test_llm_recovery_disabled_by_default_does_not_call_provider(monkeypatch):
+    monkeypatch.delenv("ICSHPS_LLM_EXTRACTION_ENABLED", raising=False)
+    metrics = {}
+
+    class FailingProvider:
+        def recover(self, *, resume_text, trigger_reasons):
+            raise AssertionError("LLM provider should not be called when disabled")
+
+    profile = extract_candidate_profile(
+        "Jane Doe\nSkills: Kubernetes",
+        candidate_id="cand_llm_disabled",
+        application_id="app_llm_disabled",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+        llm_provider=FailingProvider(),
+        llm_metrics=metrics,
+    )
+
+    assert profile.synthetic_fallback_used is False
+    assert metrics["enabled"] is False
+    assert metrics["called"] is False
+    assert metrics["skipped_reason"] == "llm_recovery_disabled"
+
+
+def test_llm_recovery_accepts_evidence_backed_skill(monkeypatch):
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_ENABLED", "true")
+    metrics = {}
+
+    class FakeProvider:
+        def recover(self, *, resume_text, trigger_reasons):
+            return LLMExtractionRecovery(
+                skills=[
+                    LLMSkill(
+                        name="Kubernetes",
+                        normalized_name="kubernetes",
+                        category="devops",
+                        source_snippet="Kubernetes",
+                        confidence=0.7,
+                    )
+                ]
+            )
+
+    profile = extract_candidate_profile(
+        "Jane Doe\nExperience\nEngineer at CloudLab, 2020 - 2022\nSkills: Kubernetes",
+        candidate_id="cand_llm_skill",
+        application_id="app_llm_skill",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+        llm_provider=FakeProvider(),
+        llm_metrics=metrics,
+    )
+
+    skill = next(skill for skill in profile.skills if skill.name == "Kubernetes")
+    assert skill.evidence[0].extraction_method == "llm_recovery"
+    assert skill.evidence[0] in profile.evidence_index
+    assert metrics["enabled"] is True
+    assert metrics["called"] is True
+    assert metrics["accepted_field_count"] == 1
+    assert metrics["final_extraction_mode"] == "deterministic_plus_llm"
+
+
+def test_llm_recovery_not_called_when_deterministic_profile_is_complete(monkeypatch):
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_ENABLED", "true")
+    metrics = {}
+
+    class FailingProvider:
+        def recover(self, *, resume_text, trigger_reasons):
+            raise AssertionError("LLM provider should not be called for complete extraction")
+
+    profile = extract_candidate_profile(
+        SAMPLE_RESUME_TEXT,
+        candidate_id="cand_llm_not_needed",
+        application_id="app_llm_not_needed",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+        llm_provider=FailingProvider(),
+        llm_metrics=metrics,
+    )
+
+    assert profile.synthetic_fallback_used is False
+    assert metrics["enabled"] is True
+    assert metrics["called"] is False
+    assert metrics["skipped_reason"] == "llm_recovery_not_needed"
+    assert metrics["final_extraction_mode"] == "deterministic"
+
+
+def test_llm_recovery_missing_provider_continues_safely(monkeypatch):
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_ENABLED", "true")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    metrics = {}
+
+    profile = extract_candidate_profile(
+        "Jane Doe\nSkills: Kubernetes",
+        candidate_id="cand_llm_no_provider",
+        application_id="app_llm_no_provider",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+        llm_metrics=metrics,
+    )
+
+    assert profile.synthetic_fallback_used is False
+    assert profile.full_name.value == "Jane Doe"
+    assert metrics["enabled"] is True
+    assert metrics["available"] is False
+    assert metrics["called"] is False
+    assert metrics["skipped_reason"] == "llm_provider_unavailable"
+
+
+def test_llm_recovery_schema_invalid_provider_output_is_rejected(monkeypatch):
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_ENABLED", "true")
+    metrics = {}
+
+    class InvalidProvider:
+        def recover(self, *, resume_text, trigger_reasons):
+            return {"unexpected": "value"}
+
+    profile = extract_candidate_profile(
+        "Jane Doe\nSkills: Kubernetes",
+        candidate_id="cand_llm_invalid_output",
+        application_id="app_llm_invalid_output",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+        llm_provider=InvalidProvider(),
+        llm_metrics=metrics,
+    )
+
+    assert profile.synthetic_fallback_used is False
+    assert metrics["called"] is True
+    assert metrics["validation_error_count"] == 1
+    assert metrics["skipped_reason"] == "llm_recovery_failed"
+    assert any("failed validation" in flag for flag in profile.manual_review_flags)
+
+
+def test_llm_recovery_rejects_recommendation_language(monkeypatch):
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_ENABLED", "true")
+    metrics = {}
+
+    class FakeProvider:
+        def recover(self, *, resume_text, trigger_reasons):
+            return LLMExtractionRecovery(
+                skills=[
+                    LLMSkill(
+                        name="Good Python",
+                        normalized_name="good_python",
+                        category="judgment",
+                        source_snippet="Good Python",
+                        confidence=0.7,
+                    )
+                ]
+            )
+
+    profile = extract_candidate_profile(
+        "Jane Doe\nSkills: Good Python",
+        candidate_id="cand_llm_rejected",
+        application_id="app_llm_rejected",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+        llm_provider=FakeProvider(),
+        llm_metrics=metrics,
+    )
+
+    assert all(skill.name != "Good Python" for skill in profile.skills)
+    assert metrics["recommendation_violation_count"] == 1
+    assert metrics["rejected_field_count"] == 1
+    assert any("recommendation language" in flag for flag in profile.manual_review_flags)
+
+
+def test_llm_recovery_rejects_routing_and_pass_fail_language(monkeypatch):
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_ENABLED", "true")
+    metrics = {}
+
+    class FakeProvider:
+        def recover(self, *, resume_text, trigger_reasons):
+            return LLMExtractionRecovery(
+                skills=[
+                    LLMSkill(
+                        name="Pass Python routing",
+                        normalized_name="pass_python_routing",
+                        category="judgment",
+                        source_snippet="Pass Python routing",
+                        confidence=0.7,
+                    )
+                ]
+            )
+
+    profile = extract_candidate_profile(
+        "Jane Doe\nSkills: Pass Python routing",
+        candidate_id="cand_llm_routing_rejected",
+        application_id="app_llm_routing_rejected",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+        llm_provider=FakeProvider(),
+        llm_metrics=metrics,
+    )
+
+    assert all(skill.name != "Pass Python routing" for skill in profile.skills)
+    assert metrics["recommendation_violation_count"] == 1
+    assert metrics["rejected_field_count"] == 1
+    assert any("recommendation language" in flag for flag in profile.manual_review_flags)
+
+
+def test_llm_recovery_rejects_fields_without_resume_evidence(monkeypatch):
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_ENABLED", "true")
+    metrics = {}
+
+    class FakeProvider:
+        def recover(self, *, resume_text, trigger_reasons):
+            return LLMExtractionRecovery(
+                location=LLMExtractedField(
+                    value="Prishtina, Kosovo",
+                    source_snippet="Prishtina, Kosovo",
+                    confidence=0.7,
+                )
+            )
+
+    profile = extract_candidate_profile(
+        "Jane Doe\nSkills: Kubernetes",
+        candidate_id="cand_llm_no_evidence",
+        application_id="app_llm_no_evidence",
+        role_id="ai_engineer_intern",
+        source_file="resume.txt",
+        llm_provider=FakeProvider(),
+        llm_metrics=metrics,
+    )
+
+    assert profile.location is None
+    assert metrics["rejected_field_count"] == 1
+    assert any("source evidence was not found" in flag for flag in profile.manual_review_flags)
+
+
+def test_llm_recovery_schema_rejects_unknown_fields():
+    with pytest.raises(ValidationError):
+        LLMExtractionRecovery.model_validate({"unexpected": "value"})
+
+
+def test_llm_recovery_max_tokens_env(monkeypatch):
+    monkeypatch.delenv("ICSHPS_LLM_EXTRACTION_MAX_TOKENS", raising=False)
+    assert llm_recovery_max_tokens() == DEFAULT_LLM_EXTRACTION_MAX_TOKENS
+
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_MAX_TOKENS", "800")
+    assert llm_recovery_max_tokens() == 800
+
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_MAX_TOKENS", "not-a-number")
+    assert llm_recovery_max_tokens() == DEFAULT_LLM_EXTRACTION_MAX_TOKENS
+
+    monkeypatch.setenv("ICSHPS_LLM_EXTRACTION_MAX_TOKENS", "0")
+    assert llm_recovery_max_tokens() == DEFAULT_LLM_EXTRACTION_MAX_TOKENS
