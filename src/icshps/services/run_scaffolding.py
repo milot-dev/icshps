@@ -192,6 +192,11 @@ def build_artifact_manifest(scaffold: RunScaffold) -> RunArtifactManifest:
                 owner="Member 2",
                 description="Extracted candidate profile with confidence and evidence.",
             ),
+            "candidate_profiles": ArtifactRef(
+                path=Path("artifacts/candidate_profiles.json"),
+                owner="Member 2",
+                description="All extracted candidate profiles for multi-candidate runs.",
+            ),
             "match_scores": ArtifactRef(
                 path=Path("artifacts/match_scores.json"),
                 owner="Member 2",
@@ -288,7 +293,7 @@ def build_initial_audit_log(scaffold: RunScaffold) -> str:
         "## Pending next steps\n\n"
         "- Task 5: Bundle Loader writes `inputs/manifest_snapshot.yaml` and validates files.\n"
         "- Task 6: Intake Agent writes `inputs/context_packet.json` and `artifacts/intake_findings.json`.\n"
-        "- Member 2 writes `candidate_profile.json` and `match_scores.json`.\n"
+        "- Member 2 writes `candidate_profile.json`, `candidate_profiles.json`, and `match_scores.json`.\n"
         "- Member 3 writes compliance, verification, and anomaly findings.\n"
     )
 

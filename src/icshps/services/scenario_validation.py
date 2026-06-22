@@ -26,6 +26,7 @@ REQUIRED_RUN_ARTIFACTS: tuple[Path, ...] = (
     Path("inputs/context_packet.json"),
     Path("artifacts/intake_findings.json"),
     Path("artifacts/candidate_profile.json"),
+    Path("artifacts/candidate_profiles.json"),
     Path("artifacts/match_scores.json"),
     Path("artifacts/compliance_flags.md"),
     Path("artifacts/verification_findings.json"),

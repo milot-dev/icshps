@@ -22,6 +22,7 @@ def test_artifact_catalog_returns_all_expected_artifacts(tmp_path: Path) -> None
             "audit_events",
             "audit_log",
             "candidate_profile",
+            "candidate_profiles",
             "compliance_flags",
             "context_packet",
             "fraud_findings",
@@ -59,6 +60,7 @@ def test_artifact_catalog_marks_missing_artifacts_not_generated_yet(tmp_path: Pa
     by_key = {artifact.key: artifact for artifact in result.artifacts}
 
     assert by_key["candidate_profile"].status == "not_generated_yet"
+    assert by_key["candidate_profiles"].status == "not_generated_yet"
     assert by_key["match_scores"].status == "not_generated_yet"
     assert by_key["compliance_flags"].status == "not_generated_yet"
     assert by_key["shortlist"].status == "not_generated_yet"

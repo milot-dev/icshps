@@ -20,6 +20,7 @@ from icshps.services.artifact_writer import (
     read_json_artifact,
     write_json_artifact,
 )
+from icshps.services.candidate_artifacts import read_candidate_profiles
 from icshps.services.run_scaffolding import V2_METRIC_DEFAULTS, RunScaffold
 
 FINAL_ARTIFACT_KEYS: tuple[str, ...] = (
@@ -75,6 +76,11 @@ def write_final_run_artifacts(
 
     context = _read_optional_context(scaffold)
     candidate_profile = _read_optional_candidate_profile(scaffold)
+    resolved_candidate_profiles = (
+        candidate_profiles
+        if candidate_profiles is not None
+        else read_candidate_profiles(scaffold)
+    )
     match_results = _read_optional_match_results(scaffold)
 
     paths = (
@@ -91,7 +97,7 @@ def write_final_run_artifacts(
             final_decision=final_decision,
             context=context,
             candidate_profile=candidate_profile,
-            candidate_profiles=candidate_profiles or [],
+            candidate_profiles=resolved_candidate_profiles,
             match_results=match_results,
         ),
         write_metrics(
@@ -187,6 +193,7 @@ def write_hiring_packet(
         ],
         "artifact_references": {
             "candidate_profile": "artifacts/candidate_profile.json",
+            "candidate_profiles": "artifacts/candidate_profiles.json",
             "match_scores": "artifacts/match_scores.json",
             "unified_findings": "artifacts/final_decision.json#findings",
             "shortlist": "artifacts/shortlist.csv",
@@ -261,13 +268,16 @@ def write_metrics(
             manual_review_count=len(manual_review_decisions),
             total_candidates=total_candidates,
         ),
-        "artifacts_created": [
-            "artifacts/final_decision.json",
-            "artifacts/shortlist.csv",
-            "artifacts/hiring_packet.json",
-            "artifacts/metrics.json",
-            "artifacts/audit_log.md",
-        ],
+        "artifacts_created": sorted(
+            {
+                *existing_metrics.get("artifacts_created", []),
+                "artifacts/final_decision.json",
+                "artifacts/shortlist.csv",
+                "artifacts/hiring_packet.json",
+                "artifacts/metrics.json",
+                "artifacts/audit_log.md",
+            }
+        ),
         "deterministic": True,
         "requires_human_approval": True,
         "final_hiring_decision_made_by_system": False,

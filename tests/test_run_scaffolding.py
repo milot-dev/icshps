@@ -63,6 +63,7 @@ def test_downstream_artifacts_are_reserved_but_not_falsely_created(tmp_path: Pat
     )
 
     assert not (scaffold.artifacts_dir / "candidate_profile.json").exists()
+    assert not (scaffold.artifacts_dir / "candidate_profiles.json").exists()
     assert not (scaffold.artifacts_dir / "match_scores.json").exists()
     assert not (scaffold.artifacts_dir / "compliance_flags.md").exists()
     assert not (scaffold.artifacts_dir / "interview_schedule.json").exists()

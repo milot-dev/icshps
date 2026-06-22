@@ -37,11 +37,17 @@ def test_agent_stage_runners_create_expected_artifacts(tmp_path: Path) -> None:
     manifest = read_json(scaffold.artifact_manifest_path)
     metrics = read_json(scaffold.artifacts_dir / "metrics.json")
     assert manifest["artifacts"]["candidate_profile"]["status"] == "created"
+    assert manifest["artifacts"]["candidate_profiles"]["status"] == "created"
     assert manifest["artifacts"]["match_scores"]["status"] == "created"
     assert manifest["artifacts"]["verification_findings"]["status"] == "created"
     assert manifest["artifacts"]["compliance_flags"]["status"] == "created"
     assert manifest["artifacts"]["anomaly_findings"]["status"] == "created"
     assert metrics["extraction"]["candidate_profile_written"] is True
+    assert metrics["extraction"]["candidate_profiles_written"] is True
+    assert metrics["extraction"]["artifact_paths"] == [
+        "artifacts/candidate_profile.json",
+        "artifacts/candidate_profiles.json",
+    ]
     assert metrics["extraction"]["llm_recovery"]["called"] is False
     assert set(metrics["extraction"]["llm_recovery"]["final_extraction_modes"]).issubset(
         {"deterministic", "deterministic_plus_llm", "synthetic_fallback"}

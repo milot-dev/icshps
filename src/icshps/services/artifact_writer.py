@@ -3,11 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
-
 from icshps.schemas.run import ArtifactStatus, RunArtifactManifest
 from icshps.services.run_scaffolding import RunScaffold
-from icshps.utils.file_io import read_json_object, write_json
+from icshps.utils.file_io import JsonPayload, read_json_object, write_json
 
 
 def artifact_path(scaffold: RunScaffold, artifact_key: str) -> Path:
@@ -28,7 +26,7 @@ def write_json_artifact(
     *,
     scaffold: RunScaffold,
     artifact_key: str,
-    payload: BaseModel | dict[str, Any],
+    payload: JsonPayload,
     mark_created: bool = True,
 ) -> Path:
     """Write a JSON artifact and optionally mark it as created in the manifest."""

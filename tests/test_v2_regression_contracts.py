@@ -12,6 +12,7 @@ REQUIRED_MVP_ARTIFACTS = (
     "inputs/context_packet.json",
     "artifacts/intake_findings.json",
     "artifacts/candidate_profile.json",
+    "artifacts/candidate_profiles.json",
     "artifacts/match_scores.json",
     "artifacts/compliance_flags.md",
     "artifacts/verification_findings.json",

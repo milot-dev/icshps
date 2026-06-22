@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from icshps.graph import run_langgraph_workflow
 
@@ -175,18 +176,35 @@ def test_end_to_end_workflow_processes_multiple_candidates(tmp_path: Path) -> No
     matches = read_json(result.run_dir / "artifacts" / "match_scores.json")
     decision = read_json(result.run_dir / "artifacts" / "final_decision.json")
     metrics = read_json(result.run_dir / "artifacts" / "metrics.json")
+    primary_profile = read_json(result.run_dir / "artifacts" / "candidate_profile.json")
+    profiles = read_json(result.run_dir / "artifacts" / "candidate_profiles.json")
     shortlist_rows = (
         result.run_dir / "artifacts" / "shortlist.csv"
     ).read_text(encoding="utf-8").splitlines()
 
+    assert "candidate_profiles" in result.created_artifacts
+    assert primary_profile["candidate_id"] == "candidate_001"
+    assert [profile["candidate_id"] for profile in profiles] == [
+        "candidate_001",
+        "candidate_002",
+    ]
     assert len(matches["results"]) == 2
     assert len(decision["decisions"]) == 2
     assert metrics["candidate_count"] == 2
     assert metrics["decision_count"] == 2
+    assert metrics["extraction"]["candidate_count"] == 2
+    assert metrics["extraction"]["candidate_profile_written"] is True
+    assert metrics["extraction"]["candidate_profiles_written"] is True
+    assert metrics["extraction"]["artifact_paths"] == [
+        "artifacts/candidate_profile.json",
+        "artifacts/candidate_profiles.json",
+    ]
+    assert "candidate_profile" in metrics["artifacts_created"]
+    assert "candidate_profiles" in metrics["artifacts_created"]
     assert len(shortlist_rows) == 3
 
 
-def read_json(path: Path) -> dict:
+def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 

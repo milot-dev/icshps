@@ -92,6 +92,11 @@ def run_resume_extraction_stage(
         artifact_key="candidate_profile",
         payload=profile,
     )
+    write_json_artifact(
+        scaffold=scaffold,
+        artifact_key="candidate_profiles",
+        payload=[profile.model_dump(mode="json") for profile in profiles],
+    )
     _update_extraction_metrics(
         scaffold=scaffold,
         llm_metrics_by_candidate=llm_metrics_by_candidate,
@@ -99,7 +104,7 @@ def run_resume_extraction_stage(
 
     return AgentStageResult(
         path=artifact_path,
-        created_artifacts=("candidate_profile",),
+        created_artifacts=("candidate_profile", "candidate_profiles"),
         skipped_stages=(),
         warnings=tuple(warnings),
         payload=profiles,
@@ -122,11 +127,17 @@ def _update_extraction_metrics(
     metrics = read_json_object(metrics_path, default_empty=True)
     artifacts_created = set(metrics.get("artifacts_created", []))
     artifacts_created.add("artifacts/candidate_profile.json")
+    artifacts_created.add("artifacts/candidate_profiles.json")
 
     llm_records = list(llm_metrics_by_candidate.values())
     metrics["extraction"] = {
         "candidate_profile_written": True,
+        "candidate_profiles_written": True,
         "candidate_count": len(llm_records),
+        "artifact_paths": [
+            "artifacts/candidate_profile.json",
+            "artifacts/candidate_profiles.json",
+        ],
         "llm_recovery": {
             "enabled": any(record.get("enabled", False) for record in llm_records),
             "available": any(record.get("available", False) for record in llm_records),

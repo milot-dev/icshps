@@ -105,6 +105,78 @@ def test_hiring_packet_is_local_mock_only(tmp_path: Path) -> None:
     assert "does not post to a real HRIS" in payload["mock_hris_payload_note"]
 
 
+def test_final_artifacts_load_persisted_candidate_profiles_when_not_passed(
+    tmp_path: Path,
+) -> None:
+    scaffold = scaffold_with_inputs(tmp_path)
+    context = context_for(scaffold.run_id).model_copy(
+        update={
+            "candidates": [
+                *context_for(scaffold.run_id).candidates,
+                CandidateApplication(
+                    id="candidate_002",
+                    application_id="app_002",
+                    name=None,
+                    target_job_id="job_001",
+                    resume_file=Path("second_resume.pdf"),
+                ),
+            ]
+        }
+    )
+    profiles = [
+        CandidateProfile(
+            candidate_id="candidate_001",
+            application_id="app_001",
+            role_id="job_001",
+            source_file="resume.pdf",
+            full_name=ExtractedField(value="Sample Candidate", confidence=1.0),
+            extraction_confidence=0.95,
+        ).model_dump(mode="json"),
+        CandidateProfile(
+            candidate_id="candidate_002",
+            application_id="app_002",
+            role_id="job_001",
+            source_file="second_resume.pdf",
+            full_name=ExtractedField(
+                value="Persisted Second Candidate",
+                confidence=1.0,
+            ),
+            extraction_confidence=0.95,
+        ).model_dump(mode="json"),
+    ]
+    final_decision = FinalDecisionArtifact(
+        run_id=scaffold.run_id,
+        bundle_id="bundle_001",
+        scenario_type="combined",
+        decisions=[
+            {
+                "candidate_id": "candidate_002",
+                "application_id": "app_002",
+                "routing_category": RoutingCategory.FAST_TRACK_REVIEW,
+                "reason": "Fast-track review. Human approval is required.",
+                "score": 91.0,
+                "blocking_finding_ids": [],
+                "requires_human_approval": True,
+            }
+        ],
+        findings=[],
+    )
+
+    write_json_artifact(scaffold=scaffold, artifact_key="context_packet", payload=context)
+    write_json_artifact(
+        scaffold=scaffold,
+        artifact_key="candidate_profiles",
+        payload=profiles,
+    )
+    write_final_run_artifacts(scaffold=scaffold, final_decision=final_decision)
+
+    payload = read_json(scaffold.artifacts_dir / "hiring_packet.json")
+
+    assert payload["candidate_summaries"][0]["candidate_name"] == (
+        "Persisted Second Candidate"
+    )
+
+
 def test_metrics_include_routing_counts(tmp_path: Path) -> None:
     scaffold = scaffold_with_inputs(tmp_path)
 

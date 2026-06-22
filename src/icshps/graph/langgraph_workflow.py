@@ -36,6 +36,7 @@ from icshps.services import (
 
 DOWNSTREAM_ARTIFACT_STAGES: tuple[str, ...] = (
     "candidate_profile",
+    "candidate_profiles",
     "match_scores",
     "compliance_flags",
     "verification_findings",
