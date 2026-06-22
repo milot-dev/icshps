@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from icshps.graph import run_end_to_end_workflow, run_langgraph_workflow
+from icshps.graph import run_langgraph_workflow
 from icshps.schemas import ArtifactStatus, FinalDecisionArtifact, RunArtifactManifest
 
 STABLE_BUNDLE = Path("data/hiring_bundles/clean_standard_application")
@@ -50,7 +50,7 @@ V2_METRIC_DEFAULTS = {
 def test_python_workflow_still_generates_required_mvp_artifacts(
     tmp_path: Path,
 ) -> None:
-    result = run_end_to_end_workflow(
+    result = run_langgraph_workflow(
         STABLE_BUNDLE,
         runs_root=tmp_path / "runs",
     )
@@ -85,7 +85,7 @@ def test_langgraph_workflow_still_generates_required_mvp_artifacts(
 def test_optional_v2_artifacts_are_reserved_but_not_required(
     tmp_path: Path,
 ) -> None:
-    result = run_end_to_end_workflow(
+    result = run_langgraph_workflow(
         STABLE_BUNDLE,
         runs_root=tmp_path / "runs",
     )
@@ -106,7 +106,7 @@ def test_optional_v2_artifacts_are_reserved_but_not_required(
 
 
 def test_v2_metrics_defaults_exist_after_completed_run(tmp_path: Path) -> None:
-    result = run_end_to_end_workflow(
+    result = run_langgraph_workflow(
         STABLE_BUNDLE,
         runs_root=tmp_path / "runs",
     )
@@ -121,7 +121,7 @@ def test_v2_metrics_defaults_exist_after_completed_run(tmp_path: Path) -> None:
 
 
 def test_audit_log_includes_v2_optional_feature_status(tmp_path: Path) -> None:
-    result = run_end_to_end_workflow(
+    result = run_langgraph_workflow(
         STABLE_BUNDLE,
         runs_root=tmp_path / "runs",
     )

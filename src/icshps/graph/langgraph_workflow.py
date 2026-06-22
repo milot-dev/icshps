@@ -13,17 +13,17 @@ from icshps.agents.matching import run_matching_stage
 from icshps.agents.orchestrator import build_final_decision_from_run
 from icshps.agents.triage import build_exception_triage_findings
 from icshps.agents.verification import run_verification_stage
-from icshps.graph.state import WorkflowState
-from icshps.graph.workflow import (
-    EndToEndWorkflowResult,
-    _append_end_to_end_audit_event,
-    _append_end_to_end_audit_log_section,
-    _append_failure_audit_event,
-    _end_to_end_next_step_for,
-    _read_workflow_artifacts,
-    _set_run_metadata_status,
-    _update_end_to_end_metrics,
+from icshps.graph.finalization import (
+    append_end_to_end_audit_event,
+    append_end_to_end_audit_log_section,
+    append_failure_audit_event,
+    end_to_end_next_step_for,
+    read_workflow_artifacts,
+    set_run_metadata_status,
+    update_end_to_end_metrics,
 )
+from icshps.graph.result import EndToEndWorkflowResult
+from icshps.graph.state import WorkflowState
 from icshps.schemas import FindingsArtifact, RunStatus
 from icshps.services import (
     artifact_path,
@@ -122,7 +122,7 @@ def prepare_run_node(state: WorkflowState) -> WorkflowState:
         run_id=state.get("run_id"),
         reset=state.get("reset", True),
     )
-    _set_run_metadata_status(scaffold, RunStatus.RUNNING)
+    set_run_metadata_status(scaffold, RunStatus.RUNNING)
 
     loaded_bundle = load_hiring_bundle(state["bundle_path"], run_id=scaffold.run_id)
 
@@ -328,17 +328,17 @@ def _finalize_state(
     loaded_bundle = _required(state, "loaded_bundle")
     intake_result = _required(state, "intake_result")
 
-    artifacts = _read_workflow_artifacts(scaffold.artifact_manifest_path)
+    artifacts = read_workflow_artifacts(scaffold.artifact_manifest_path)
     skipped = tuple(sorted(set(state.get("skipped_stages", ()))))
 
-    _update_end_to_end_metrics(
+    update_end_to_end_metrics(
         scaffold=scaffold,
         loaded_bundle=loaded_bundle,
         status=status,
         created_artifacts=artifacts.created,
         skipped_stages=skipped,
     )
-    _append_end_to_end_audit_event(
+    append_end_to_end_audit_event(
         scaffold=scaffold,
         status=status,
         intake_result=intake_result,
@@ -346,14 +346,14 @@ def _finalize_state(
         pending_artifacts=artifacts.pending,
         skipped_stages=skipped,
     )
-    _append_end_to_end_audit_log_section(
+    append_end_to_end_audit_log_section(
         scaffold=scaffold,
         status=status,
         created_artifacts=artifacts.created,
         pending_artifacts=artifacts.pending,
         skipped_stages=skipped,
     )
-    _set_run_metadata_status(scaffold, RunStatus.COMPLETED)
+    set_run_metadata_status(scaffold, RunStatus.COMPLETED)
 
     return {
         "status": status,
@@ -390,7 +390,7 @@ def _result_from_state(state: WorkflowState) -> EndToEndWorkflowResult:
         skipped_stages=state.get("skipped_stages", ()),
         warnings=state.get("warnings", ()),
         errors=state.get("errors", ()),
-        next_step=_end_to_end_next_step_for(status),
+        next_step=end_to_end_next_step_for(status),
     )
 
 
@@ -402,9 +402,9 @@ def _failed_result_from_state(
     scaffold = state.get("scaffold")
 
     if scaffold is not None:
-        _append_failure_audit_event(scaffold=scaffold, error=error)
-        _set_run_metadata_status(scaffold, RunStatus.FAILED)
-        artifacts = _read_workflow_artifacts(scaffold.artifact_manifest_path)
+        append_failure_audit_event(scaffold=scaffold, error=error)
+        set_run_metadata_status(scaffold, RunStatus.FAILED)
+        artifacts = read_workflow_artifacts(scaffold.artifact_manifest_path)
         state = {
             **state,
             "status": "failed",
@@ -435,7 +435,7 @@ def _failed_result_from_state(
         skipped_stages=(),
         warnings=(),
         errors=(error,),
-        next_step=_end_to_end_next_step_for("failed"),
+        next_step=end_to_end_next_step_for("failed"),
     )
 
 
