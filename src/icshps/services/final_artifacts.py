@@ -20,7 +20,7 @@ from icshps.services.artifact_writer import (
     read_json_artifact,
     write_json_artifact,
 )
-from icshps.services.run_scaffolding import RunScaffold
+from icshps.services.run_scaffolding import V2_METRIC_DEFAULTS, RunScaffold
 
 FINAL_ARTIFACT_KEYS: tuple[str, ...] = (
     "final_decision",
@@ -235,6 +235,7 @@ def write_metrics(
         "bundle_id": final_decision.bundle_id,
         "scenario_type": final_decision.scenario_type,
         "candidate_count": total_candidates,
+        **_v2_metric_values(scaffold),
         "total_candidates": total_candidates,
         "decision_count": len(final_decision.decisions),
         "finding_count": len(final_decision.findings),
@@ -504,11 +505,34 @@ def _build_audit_log_markdown(
         f"{routing_lines}\n\n"
         "## Important Findings\n\n"
         f"{finding_lines}\n\n"
+        "## V2 Optional Feature Status\n\n"
+        "- LLM-assisted extraction: `not enabled by default`.\n"
+        "- Scanned resume detection: `not generated in this run`.\n"
+        "- Interview scheduling artifact: "
+        f"`{_optional_artifact_status(scaffold, 'interview_schedule')}`.\n"
+        "- Fraud findings artifact: "
+        f"`{_optional_artifact_status(scaffold, 'fraud_findings')}`.\n"
+        "- ATS mock payload: "
+        f"`{_optional_artifact_status(scaffold, 'ats_payload')}`.\n"
+        "- Real external integrations: `not used`.\n\n"
         "## Human Approval Reminder\n\n"
         "ICSHPS is a local decision-support MVP. It does not make final hiring, "
         "rejection, interview, HRIS, ATS, LinkedIn, background-check, email, or "
         "calendar actions. Every recommendation requires human approval.\n"
     )
+
+
+def _v2_metric_values(scaffold: RunScaffold) -> dict[str, Any]:
+    existing = read_json_artifact(scaffold=scaffold, artifact_key="metrics") or {}
+    return {
+        key: existing.get(key, default)
+        for key, default in V2_METRIC_DEFAULTS.items()
+    }
+
+
+def _optional_artifact_status(scaffold: RunScaffold, artifact_key: str) -> str:
+    path = artifact_path(scaffold, artifact_key)
+    return "generated" if path.exists() else "not generated"
 
 
 def _render_decision_line(decision: CandidateRoutingDecision) -> str:

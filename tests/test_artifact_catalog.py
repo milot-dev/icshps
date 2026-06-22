@@ -18,11 +18,13 @@ def test_artifact_catalog_returns_all_expected_artifacts(tmp_path: Path) -> None
         [
             "anomaly_findings",
             "artifact_manifest",
+            "ats_payload",
             "audit_events",
             "audit_log",
             "candidate_profile",
             "compliance_flags",
             "context_packet",
+            "fraud_findings",
             "final_decision",
             "hiring_packet",
             "intake_findings",
@@ -68,8 +70,9 @@ def test_artifact_catalog_handles_optional_artifacts(tmp_path: Path) -> None:
     result = read_artifact_catalog(scaffold.run_dir)
     by_key = {artifact.key: artifact for artifact in result.artifacts}
 
-    assert by_key["interview_schedule"].required_for_mvp is False
-    assert by_key["interview_schedule"].status == "not_generated_yet"
+    for key in ("interview_schedule", "fraud_findings", "ats_payload"):
+        assert by_key[key].required_for_mvp is False
+        assert by_key[key].status == "not_generated_yet"
 
 
 def test_artifact_catalog_uses_deterministic_order(tmp_path: Path) -> None:
