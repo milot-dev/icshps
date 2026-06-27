@@ -224,6 +224,8 @@ __marimo__/
 __pycache__/
 *.pyc
 .env
+.google_calendar_oauth_token.json
+google_calendar_oauth_client_secret*.json
 runs/*
 !runs/.gitkeep
 .pytest_cache/

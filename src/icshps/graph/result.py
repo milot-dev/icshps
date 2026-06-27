@@ -25,6 +25,7 @@ class EndToEndWorkflowResult:
     compliance_flags_path: Path | None
     verification_findings_path: Path | None
     anomaly_findings_path: Path | None
+    interview_schedule_path: Path | None
     final_decision: FinalDecisionArtifact | None
     artifact_manifest_path: Path | None
     metrics_path: Path | None

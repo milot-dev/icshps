@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
 
+from icshps.agents.scheduling import run_interview_schedule_stage
 from icshps.graph import run_langgraph_workflow
+from icshps.services import RunScaffold
 from icshps.services.artifact_catalog import ArtifactCatalogItem, read_artifact_catalog
 from icshps.services.reviewer_approvals import (
     ReviewerAction,
@@ -33,11 +37,13 @@ from icshps.utils.streamlit import (
     render_markdown as _render_markdown,
     render_text as _render_text,
     run_directories as _run_directories,
+    schedule_payload_has_items,
     yes_no as _yes_no,
 )
 
 RUNS_ROOT = Path("runs")
 BUNDLES_ROOT = Path("data") / "hiring_bundles"
+KOSOVO_TIMEZONE = ZoneInfo("Europe/Belgrade")
 UPLOAD_ROOT = RUNS_ROOT / "_uploaded_bundles"
 
 DISPLAY_ARTIFACT_KEYS: tuple[str, ...] = (
@@ -64,6 +70,7 @@ APPROVAL_OPTIONS: dict[str, ReviewerAction] = {
     "Hold": "hold",
     "Reject after human review": "reject_after_human_review",
 }
+SCHEDULE_GENERATION_NOTICE_KEY = "schedule_generation_notice"
 
 
 def main() -> None:
@@ -531,6 +538,8 @@ def _render_candidate_review(run_state: dict[str, Any]) -> None:
 def _render_candidate_detail(
     run_state: dict[str, Any],
     row: dict[str, Any],
+    *,
+    show_approval_hint: bool = True,
 ) -> None:
     payloads = run_state["payloads"]
     profile = _profile_lookup(read_candidate_profiles_payload(payloads)).get(
@@ -560,7 +569,8 @@ def _render_candidate_detail(
         _render_match_summary(match)
 
     _render_finding_summary(findings)
-    st.info("Use the Approvals tab to save or update the human review decision.")
+    if show_approval_hint:
+        st.info("Use the Approvals tab to save or update the human review decision.")
 
 
 def _render_approvals(run_state: dict[str, Any], *, reviewer_name: str) -> None:
@@ -582,6 +592,7 @@ def _render_approvals(run_state: dict[str, Any], *, reviewer_name: str) -> None:
         key="approval_candidate_select",
     )
     row = next(item for item in rows if _candidate_key(item) == selected_key)
+    _render_candidate_detail(run_state, row, show_approval_hint=False)
     _render_approval_form(
         run_state,
         row,
@@ -622,11 +633,17 @@ def _render_approval_form(
             horizontal=True,
         )
         note = st.text_area("Reviewer note", value=row.get("approval_note", ""))
+        reviewed = st.checkbox(
+            "I reviewed the candidate profile, match summary, findings, and routing rationale.",
+        )
         submitted = st.form_submit_button("Save review decision", type="primary")
 
     if submitted:
         if not reviewer_name.strip():
             st.error("Enter a reviewer name in the sidebar before saving.")
+            return
+        if not reviewed:
+            st.error("Confirm that you reviewed the candidate context before saving.")
             return
         try:
             upsert_reviewer_approval(
@@ -651,24 +668,240 @@ def _render_calendar_queue(run_state: dict[str, Any]) -> None:
         st.info("No run selected yet.")
         return
 
-    st.subheader("Calendar Queue")
-    st.caption("Mock Google Calendar readiness queue. No external calendar calls are made.")
+    st.subheader("Interview Scheduling")
+    st.caption(
+        "Find human-reviewable interview slots for approved candidates using "
+        "Google Calendar availability. No events or invitations are created."
+    )
+    _render_schedule_generation_notice()
 
     schedule_payload = run_state["payloads"].get("interview_schedule")
-    if schedule_payload:
-        st.markdown("#### Interview Schedule Suggestions")
-        st.json(schedule_payload)
-        return
-
     queue_rows = build_calendar_queue_rows(run_state["candidate_rows"])
-    if not queue_rows:
-        st.info("No candidates have been approved for scheduling yet.")
+    items = _schedule_items(schedule_payload)
+
+    _render_scheduling_progress(
+        approved_count=len(queue_rows),
+        suggested_count=len(items),
+    )
+    _render_schedule_warnings(schedule_payload)
+
+    if items:
+        st.markdown("#### Proposed Interview Slots")
+        _render_schedule_suggestions(
+            run_state=run_state,
+            items=items,
+        )
+        _render_schedule_generation_button(
+            run_state["run_dir"],
+            label="Refresh available slots",
+            help_text="Re-check panel availability and rebuild the proposed slots.",
+        )
         return
 
+    if not queue_rows:
+        st.info(
+            "No candidates are ready for scheduling yet. Use the Approvals tab "
+            "to approve a reviewed candidate for scheduling first."
+        )
+        return
+
+    st.markdown("#### Ready For Scheduling")
+    st.caption(
+        "These candidates have been approved by a reviewer. The next step is to "
+        "find an available panel time for human confirmation."
+    )
     st.dataframe(
-        pd.DataFrame(queue_rows),
+        pd.DataFrame(_calendar_queue_display_rows(queue_rows)),
         use_container_width=True,
         hide_index=True,
+    )
+
+    _render_schedule_generation_button(
+        run_state["run_dir"],
+        label="Find available slots",
+        help_text="Look for open time on the selected panel calendar.",
+    )
+
+
+def _render_schedule_suggestions(
+    *,
+    run_state: dict[str, Any],
+    items: list[dict[str, Any]],
+) -> None:
+    candidate_by_key = {
+        (row.get("candidate_id"), row.get("application_id")): row
+        for row in run_state["candidate_rows"]
+    }
+
+    rows = []
+    for item in items:
+        key = (item.get("candidate_id"), item.get("application_id"))
+        candidate = candidate_by_key.get(key, {})
+        rows.append(
+            {
+                "candidate": candidate.get("candidate_name")
+                or item.get("candidate_id"),
+                "proposed_time": _format_kosovo_time(item.get("suggested_time")),
+                "duration": f"{item.get('duration_minutes')} min",
+                "panel": _format_panel_members(item),
+                "status": "Needs human confirmation",
+            }
+        )
+
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.caption(
+        "Review the proposed time with the candidate and panel before creating "
+        "an event manually in Google Calendar."
+    )
+
+    for item in items:
+        key = (item.get("candidate_id"), item.get("application_id"))
+        candidate = candidate_by_key.get(key, {})
+        label = candidate.get("candidate_name") or item.get("candidate_id")
+        st.divider()
+        st.markdown(f"**{label}**")
+        detail_cols = st.columns([1.4, 1, 1])
+        detail_cols[0].metric(
+            "Proposed time",
+            _format_kosovo_time(item.get("suggested_time")),
+        )
+        detail_cols[1].metric("Duration", f"{item.get('duration_minutes')} min")
+        detail_cols[2].metric("Status", "Needs confirmation")
+        st.caption(f"Panel: {_format_panel_members(item)}")
+
+
+def _render_scheduling_progress(
+    *,
+    approved_count: int,
+    suggested_count: int,
+) -> None:
+    cols = st.columns(2)
+    cols[0].metric("Ready", approved_count)
+    cols[1].metric("Proposed slots", suggested_count)
+
+    if suggested_count:
+        st.info("A slot is proposed and waiting for human confirmation.")
+    elif approved_count:
+        st.info("Approved candidates are ready. Find available slots to continue.")
+    else:
+        st.info("Start by approving a reviewed candidate for scheduling.")
+
+
+def _render_schedule_warnings(payload: Any) -> None:
+    if not isinstance(payload, dict):
+        return
+    warnings = [
+        warning
+        for warning in payload.get("warnings") or []
+        if isinstance(warning, dict) and warning.get("message")
+    ]
+    if not warnings:
+        return
+    with st.expander("Scheduling notes", expanded=False):
+        for warning in warnings:
+            st.warning(str(warning["message"]))
+
+
+def _calendar_queue_display_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "candidate": row.get("candidate_name"),
+            "status": "Ready for scheduling",
+            "approved_by": row.get("reviewer_name"),
+            "approved_at": row.get("approval_updated_at"),
+        }
+        for row in rows
+    ]
+
+
+def _schedule_items(payload: Any) -> list[dict[str, Any]]:
+    if not schedule_payload_has_items(payload):
+        return []
+    return [item for item in payload.get("items") or [] if isinstance(item, dict)]
+
+
+def _format_panel_members(item: dict[str, Any]) -> str:
+    members = item.get("panel_members") or []
+    names = [
+        str(member.get("name") or member.get("email") or member.get("calendar_id"))
+        for member in members
+        if isinstance(member, dict)
+        and (member.get("name") or member.get("email") or member.get("calendar_id"))
+    ]
+    return ", ".join(names) if names else "To be confirmed"
+
+
+def _format_kosovo_time(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    try:
+        scheduled_at = datetime.fromisoformat(value).astimezone(KOSOVO_TIMEZONE)
+    except ValueError:
+        return value
+
+    date_text = scheduled_at.strftime("%a, %b %d, %Y")
+    date_text = date_text.replace(" 0", " ")
+    return f"{date_text}, {scheduled_at:%H:%M} Kosovo time"
+
+
+def _render_schedule_generation_button(
+    run_dir: Path,
+    *,
+    label: str,
+    help_text: str,
+) -> None:
+    if st.button(label, type="primary", help=help_text):
+        try:
+            stage = run_interview_schedule_stage(
+                scaffold=_scaffold_from_run_dir(run_dir)
+            )
+        except Exception as exc:
+            st.session_state[SCHEDULE_GENERATION_NOTICE_KEY] = {
+                "kind": "error",
+                "message": f"Could not generate schedule suggestions: {exc}",
+            }
+            st.rerun()
+            return
+
+        if stage.warnings:
+            st.session_state[SCHEDULE_GENERATION_NOTICE_KEY] = {
+                "kind": "warning",
+                "message": stage.warnings[0],
+            }
+        else:
+            st.session_state[SCHEDULE_GENERATION_NOTICE_KEY] = {
+                "kind": "success",
+                "message": "Available slot found. Review and confirm it manually.",
+            }
+        st.rerun()
+
+
+def _render_schedule_generation_notice() -> None:
+    notice = st.session_state.pop(SCHEDULE_GENERATION_NOTICE_KEY, None)
+    if not isinstance(notice, dict):
+        return
+
+    message = notice.get("message")
+    if not message:
+        return
+
+    kind = notice.get("kind")
+    if kind == "error":
+        st.error(message)
+    elif kind == "warning":
+        st.warning(message)
+    else:
+        st.success(message)
+
+
+def _scaffold_from_run_dir(run_dir: Path) -> RunScaffold:
+    return RunScaffold(
+        run_id=run_dir.name,
+        run_dir=run_dir,
+        inputs_dir=run_dir / "inputs",
+        artifacts_dir=run_dir / "artifacts",
+        logs_dir=run_dir / "logs",
+        tmp_dir=run_dir / "tmp",
     )
 
 
@@ -771,16 +1004,38 @@ def _render_finding_summary(findings: list[dict[str, Any]]) -> None:
         for finding in findings:
             st.markdown(f"**{finding.get('title')}**")
             evidence_items = finding.get("evidence") or []
-            snippets = [
-                evidence.get("text_snippet")
+            evidence_lines = [
+                line
                 for evidence in evidence_items
-                if isinstance(evidence, dict) and evidence.get("text_snippet")
+                if isinstance(evidence, dict)
+                for line in (_format_evidence_item(evidence),)
+                if line
             ]
-            if snippets:
-                for snippet in snippets[:3]:
-                    st.code(snippet)
+            if evidence_lines:
+                for line in evidence_lines[:5]:
+                    st.code(line)
             else:
-                st.caption("No evidence snippet available.")
+                st.caption("No evidence reference available.")
+
+
+def _format_evidence_item(evidence: dict[str, Any]) -> str | None:
+    snippet = evidence.get("text_snippet")
+    if snippet:
+        return str(snippet)
+
+    parts = []
+    for label, key in (
+        ("source", "source_type"),
+        ("section", "section"),
+        ("field", "field_path"),
+        ("file", "source_path"),
+        ("reason", "missing_reason"),
+    ):
+        value = evidence.get(key)
+        if value:
+            parts.append(f"{label}: {value}")
+
+    return " | ".join(parts) if parts else None
 
 
 def _render_optional_feature_status(metrics: dict[str, Any]) -> None:

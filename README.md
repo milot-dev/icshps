@@ -214,6 +214,29 @@ ICSHPS_LLM_EXTRACTION_MAX_TOKENS=1200
 
 Keep `ICSHPS_LLM_EXTRACTION_ENABLED=false` for deterministic-only runs, CI, offline development, or when no OpenAI quota is available. Do not commit local `.env` files.
 
+Enable optional V2 Google Calendar interview schedule suggestions with environment
+configuration:
+
+```text
+ICSHPS_INTERVIEW_PANEL_MEMBERS_JSON=[{"name":"Panel Member","email":"panel@example.com","calendar_id":"panel@example.com"}]
+ICSHPS_GOOGLE_CALENDAR_CREDENTIALS_FILE=C:\path\to\service-account.json
+ICSHPS_INTERVIEW_TIMEZONE=Europe/Belgrade
+ICSHPS_INTERVIEW_DURATION_MINUTES=45
+ICSHPS_INTERVIEW_SEARCH_WORKDAYS=10
+ICSHPS_INTERVIEW_WORKDAY_START=10:00
+ICSHPS_INTERVIEW_WORKDAY_END=17:00
+```
+
+The scheduler uses Google Calendar FreeBusy availability lookup to write
+`artifacts/interview_schedule.json` after final routing, but only creates
+schedule suggestions for candidates a reviewer has approved for scheduling in
+the Streamlit app. Schedule suggestions keep `requires_human_confirmation=true`.
+The Calendar Queue displays those proposals in Kosovo time for a reviewer to
+confirm manually. This feature does not create calendar events, add attendees,
+or send candidate invitations. Missing reviewer approval, Calendar credentials,
+availability access, or panel config produces controlled warnings instead of
+failing the pipeline.
+
 Run scenario validation for all available MVP Hiring Bundles:
 
 ```bash

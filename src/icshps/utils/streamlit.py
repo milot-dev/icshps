@@ -106,6 +106,33 @@ def build_calendar_queue_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]
     ]
 
 
+def schedule_payload_has_items(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    items = payload.get("items")
+    return isinstance(items, list) and bool(items)
+
+
+def format_evidence_item(evidence: dict[str, Any]) -> str | None:
+    snippet = evidence.get("text_snippet")
+    if snippet:
+        return str(snippet)
+
+    parts = []
+    for label, key in (
+        ("source", "source_type"),
+        ("section", "section"),
+        ("field", "field_path"),
+        ("file", "source_path"),
+        ("reason", "missing_reason"),
+    ):
+        value = evidence.get(key)
+        if value:
+            parts.append(f"{label}: {value}")
+
+    return " | ".join(parts) if parts else None
+
+
 def build_dashboard_summary(run_states: list[dict[str, Any]]) -> dict[str, Any]:
     routing_counts: dict[str, int] = {}
     run_rows: list[dict[str, Any]] = []

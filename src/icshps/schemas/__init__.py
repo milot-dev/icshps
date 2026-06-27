@@ -18,6 +18,12 @@ from icshps.schemas.context import (
 )
 from icshps.schemas.decision import CandidateRoutingDecision, FinalDecisionArtifact
 from icshps.schemas.findings import Finding, FindingsArtifact
+from icshps.schemas.interview_schedule import (
+    InterviewScheduleArtifact,
+    InterviewScheduleItem,
+    InterviewScheduleWarning,
+    PanelMember,
+)
 from icshps.schemas.matching import (
     CandidateMatchResult,
     JobMatchRequirements,
@@ -67,6 +73,10 @@ __all__ = [
     "CandidateProfile",
     "Finding",
     "FindingsArtifact",
+    "PanelMember",
+    "InterviewScheduleItem",
+    "InterviewScheduleWarning",
+    "InterviewScheduleArtifact",
     "RequirementCheck",
     "JobMatchRequirements",
     "CandidateMatchResult",

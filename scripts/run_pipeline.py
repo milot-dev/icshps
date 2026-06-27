@@ -5,6 +5,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from icshps.utils.file_io import write_text
 from icshps.utils.ids import deterministic_name_id, sha256_file
 from icshps.utils.text import slugify
@@ -204,6 +206,8 @@ def _print_success(run_id: str, run_dir: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
+
     parser = _build_parser()
     args = parser.parse_args(argv)
 

@@ -527,6 +527,8 @@ def _build_audit_log_markdown(
         "- ATS mock payload: "
         f"`{_optional_artifact_status(scaffold, 'ats_payload')}`.\n"
         "- Real external integrations: `not used`.\n\n"
+        "Interview scheduling, when generated, uses Google Calendar availability "
+        "lookup only. It does not create calendar events or send invitations.\n\n"
         "## Human Approval Reminder\n\n"
         "ICSHPS is a local decision-support MVP. It does not make final hiring, "
         "rejection, interview, HRIS, ATS, LinkedIn, background-check, email, or "

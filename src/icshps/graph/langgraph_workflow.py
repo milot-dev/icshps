@@ -11,6 +11,7 @@ from icshps.agents.extraction import run_resume_extraction_stage
 from icshps.agents.intake import run_application_intake
 from icshps.agents.matching import run_matching_stage
 from icshps.agents.orchestrator import build_final_decision_from_run
+from icshps.agents.scheduling import run_interview_schedule_stage
 from icshps.agents.triage import build_exception_triage_findings
 from icshps.agents.verification import run_verification_stage
 from icshps.graph.finalization import (
@@ -295,10 +296,21 @@ def routing_and_final_artifacts_node(state: WorkflowState) -> WorkflowState:
         final_decision=final_decision,
         candidate_profiles=list(candidate_profiles),
     )
+    schedule_stage = run_interview_schedule_stage(
+        scaffold=scaffold,
+        final_decision=final_decision,
+    )
 
     return {
         "final_decision": final_decision,
         "compliance_flags_path": compliance_flags_path,
+        "interview_schedule_path": schedule_stage.path,
+        "skipped_stages": _append_values(
+            state,
+            "skipped_stages",
+            schedule_stage.skipped_stages,
+        ),
+        "warnings": _append_values(state, "warnings", schedule_stage.warnings),
     }
 
 
@@ -382,6 +394,7 @@ def _result_from_state(state: WorkflowState) -> EndToEndWorkflowResult:
         compliance_flags_path=state.get("compliance_flags_path"),
         verification_findings_path=state.get("verification_findings_path"),
         anomaly_findings_path=state.get("anomaly_findings_path"),
+        interview_schedule_path=state.get("interview_schedule_path"),
         final_decision=state.get("final_decision"),
         artifact_manifest_path=state.get("artifact_manifest_path"),
         metrics_path=state.get("metrics_path"),
@@ -427,6 +440,7 @@ def _failed_result_from_state(
         compliance_flags_path=None,
         verification_findings_path=None,
         anomaly_findings_path=None,
+        interview_schedule_path=None,
         final_decision=None,
         artifact_manifest_path=None,
         metrics_path=None,

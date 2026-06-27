@@ -34,6 +34,7 @@ class WorkflowState(TypedDict, total=False):
     compliance_flags_path: Path | None
     verification_findings_path: Path | None
     anomaly_findings_path: Path | None
+    interview_schedule_path: Path | None
     artifact_manifest_path: Path | None
     metrics_path: Path | None
     audit_log_path: Path | None

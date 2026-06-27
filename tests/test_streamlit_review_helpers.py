@@ -6,6 +6,60 @@ import zipfile
 
 from icshps.services.reviewer_approvals import ReviewerApproval
 from icshps.utils import streamlit as streamlit_utils
+from streamlit_app import (
+    _calendar_queue_display_rows,
+    _format_kosovo_time,
+    _format_panel_members,
+    _schedule_items,
+)
+
+
+def test_format_kosovo_time_is_human_readable() -> None:
+    assert (
+        _format_kosovo_time("2026-06-29T10:00:00+02:00")
+        == "Mon, Jun 29, 2026, 10:00 Kosovo time"
+    )
+
+
+def test_calendar_queue_display_rows_use_reviewer_language() -> None:
+    assert _calendar_queue_display_rows(
+        [
+            {
+                "candidate_name": "Ada Candidate",
+                "reviewer_name": "Reviewer",
+                "approval_updated_at": "2026-06-24T10:00:00Z",
+                "candidate_id": "candidate_001",
+                "application_id": "app_001",
+            }
+        ]
+    ) == [
+        {
+            "candidate": "Ada Candidate",
+            "status": "Ready for scheduling",
+            "approved_by": "Reviewer",
+            "approved_at": "2026-06-24T10:00:00Z",
+        }
+    ]
+
+
+def test_schedule_display_helpers_filter_payloads() -> None:
+    assert _schedule_items({"items": [{"candidate_id": "candidate_001"}, "bad"]}) == [
+        {"candidate_id": "candidate_001"}
+    ]
+    assert (
+        _format_panel_members(
+            {
+                "panel_members": [
+                    {
+                        "name": "Panel Member",
+                        "email": "panel@example.com",
+                        "calendar_id": "panel@example.com",
+                    }
+                ]
+            }
+        )
+        == "Panel Member"
+    )
 
 
 def test_candidate_review_rows_join_decisions_profiles_matches_and_approvals() -> None:
@@ -140,6 +194,42 @@ def test_approved_candidates_appear_in_calendar_queue() -> None:
             "approval_updated_at": "2026-06-24T10:00:00Z",
         }
     ]
+
+
+def test_empty_schedule_artifact_does_not_replace_calendar_queue() -> None:
+    assert streamlit_utils.schedule_payload_has_items(None) is False
+    assert streamlit_utils.schedule_payload_has_items({"items": []}) is False
+    assert (
+        streamlit_utils.schedule_payload_has_items(
+            {"warnings": [{"code": "missing"}]}
+        )
+        is False
+    )
+    assert (
+        streamlit_utils.schedule_payload_has_items(
+            {"items": [{"candidate_id": "candidate_001"}]}
+        )
+        is True
+    )
+
+
+def test_format_evidence_item_falls_back_to_source_metadata() -> None:
+    assert (
+        streamlit_utils.format_evidence_item(
+            {
+                "source_type": "resume",
+                "section": "experience",
+                "field_path": "work_history[0].title",
+                "source_path": "candidate_resume.pdf",
+            }
+        )
+        == "source: resume | section: experience | field: work_history[0].title | file: candidate_resume.pdf"
+    )
+    assert (
+        streamlit_utils.format_evidence_item({"text_snippet": "Built hiring tools."})
+        == "Built hiring tools."
+    )
+    assert streamlit_utils.format_evidence_item({}) is None
 
 
 def test_dashboard_summary_aggregates_multiple_runs(tmp_path: Path) -> None:
