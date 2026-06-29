@@ -46,6 +46,55 @@ def test_one_command_run_generates_final_artifacts(tmp_path: Path) -> None:
         assert (run_dir / artifact_path).exists(), artifact_path
 
 
+def test_one_command_run_accepts_langgraph_engine_flag(tmp_path: Path) -> None:
+    bundle_path = Path("data/hiring_bundles/clean_standard_application")
+    runs_root = tmp_path / "runs"
+    run_id = "pytest_langgraph_flag"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_pipeline.py",
+            str(bundle_path),
+            "--runs-root",
+            str(runs_root),
+            "--run-id",
+            run_id,
+            "--reset",
+            "--engine",
+            "langgraph",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (runs_root / run_id / "artifacts" / "final_decision.json").exists()
+
+
+def test_one_command_run_rejects_python_engine_flag(tmp_path: Path) -> None:
+    bundle_path = Path("data/hiring_bundles/clean_standard_application")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_pipeline.py",
+            str(bundle_path),
+            "--runs-root",
+            str(tmp_path / "runs"),
+            "--engine",
+            "python",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "invalid choice" in result.stderr
+
+
 def test_one_command_run_fails_for_invalid_bundle(tmp_path: Path) -> None:
     result = subprocess.run(
         [

@@ -20,7 +20,8 @@ from icshps.services.artifact_writer import (
     read_json_artifact,
     write_json_artifact,
 )
-from icshps.services.run_scaffolding import RunScaffold
+from icshps.services.candidate_artifacts import read_candidate_profiles
+from icshps.services.run_scaffolding import V2_METRIC_DEFAULTS, RunScaffold
 
 FINAL_ARTIFACT_KEYS: tuple[str, ...] = (
     "final_decision",
@@ -75,6 +76,11 @@ def write_final_run_artifacts(
 
     context = _read_optional_context(scaffold)
     candidate_profile = _read_optional_candidate_profile(scaffold)
+    resolved_candidate_profiles = (
+        candidate_profiles
+        if candidate_profiles is not None
+        else read_candidate_profiles(scaffold)
+    )
     match_results = _read_optional_match_results(scaffold)
 
     paths = (
@@ -91,7 +97,7 @@ def write_final_run_artifacts(
             final_decision=final_decision,
             context=context,
             candidate_profile=candidate_profile,
-            candidate_profiles=candidate_profiles or [],
+            candidate_profiles=resolved_candidate_profiles,
             match_results=match_results,
         ),
         write_metrics(
@@ -187,6 +193,7 @@ def write_hiring_packet(
         ],
         "artifact_references": {
             "candidate_profile": "artifacts/candidate_profile.json",
+            "candidate_profiles": "artifacts/candidate_profiles.json",
             "match_scores": "artifacts/match_scores.json",
             "unified_findings": "artifacts/final_decision.json#findings",
             "shortlist": "artifacts/shortlist.csv",
@@ -217,6 +224,7 @@ def write_metrics(
 ) -> Path:
     """Write deterministic summary metrics for the completed local run."""
 
+    existing_metrics = read_json_artifact(scaffold=scaffold, artifact_key="metrics") or {}
     routing_counts = Counter(
         decision.routing_category.value for decision in final_decision.decisions
     )
@@ -231,10 +239,12 @@ def write_metrics(
     ]
 
     payload: dict[str, Any] = {
+        **existing_metrics,
         "run_id": final_decision.run_id,
         "bundle_id": final_decision.bundle_id,
         "scenario_type": final_decision.scenario_type,
         "candidate_count": total_candidates,
+        **_v2_metric_values(scaffold),
         "total_candidates": total_candidates,
         "decision_count": len(final_decision.decisions),
         "finding_count": len(final_decision.findings),
@@ -258,13 +268,16 @@ def write_metrics(
             manual_review_count=len(manual_review_decisions),
             total_candidates=total_candidates,
         ),
-        "artifacts_created": [
-            "artifacts/final_decision.json",
-            "artifacts/shortlist.csv",
-            "artifacts/hiring_packet.json",
-            "artifacts/metrics.json",
-            "artifacts/audit_log.md",
-        ],
+        "artifacts_created": sorted(
+            {
+                *existing_metrics.get("artifacts_created", []),
+                "artifacts/final_decision.json",
+                "artifacts/shortlist.csv",
+                "artifacts/hiring_packet.json",
+                "artifacts/metrics.json",
+                "artifacts/audit_log.md",
+            }
+        ),
         "deterministic": True,
         "requires_human_approval": True,
         "final_hiring_decision_made_by_system": False,
@@ -504,11 +517,36 @@ def _build_audit_log_markdown(
         f"{routing_lines}\n\n"
         "## Important Findings\n\n"
         f"{finding_lines}\n\n"
+        "## V2 Optional Feature Status\n\n"
+        "- LLM-assisted extraction: `not enabled by default`.\n"
+        "- Scanned resume detection: `not generated in this run`.\n"
+        "- Interview scheduling artifact: "
+        f"`{_optional_artifact_status(scaffold, 'interview_schedule')}`.\n"
+        "- Fraud findings artifact: "
+        f"`{_optional_artifact_status(scaffold, 'fraud_findings')}`.\n"
+        "- ATS mock payload: "
+        f"`{_optional_artifact_status(scaffold, 'ats_payload')}`.\n"
+        "- Real external integrations: `not used`.\n\n"
+        "Interview scheduling, when generated, uses Google Calendar availability "
+        "lookup only. It does not create calendar events or send invitations.\n\n"
         "## Human Approval Reminder\n\n"
         "ICSHPS is a local decision-support MVP. It does not make final hiring, "
         "rejection, interview, HRIS, ATS, LinkedIn, background-check, email, or "
         "calendar actions. Every recommendation requires human approval.\n"
     )
+
+
+def _v2_metric_values(scaffold: RunScaffold) -> dict[str, Any]:
+    existing = read_json_artifact(scaffold=scaffold, artifact_key="metrics") or {}
+    return {
+        key: existing.get(key, default)
+        for key, default in V2_METRIC_DEFAULTS.items()
+    }
+
+
+def _optional_artifact_status(scaffold: RunScaffold, artifact_key: str) -> str:
+    path = artifact_path(scaffold, artifact_key)
+    return "generated" if path.exists() else "not generated"
 
 
 def _render_decision_line(decision: CandidateRoutingDecision) -> str:

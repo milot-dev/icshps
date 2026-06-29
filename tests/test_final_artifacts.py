@@ -105,6 +105,78 @@ def test_hiring_packet_is_local_mock_only(tmp_path: Path) -> None:
     assert "does not post to a real HRIS" in payload["mock_hris_payload_note"]
 
 
+def test_final_artifacts_load_persisted_candidate_profiles_when_not_passed(
+    tmp_path: Path,
+) -> None:
+    scaffold = scaffold_with_inputs(tmp_path)
+    context = context_for(scaffold.run_id).model_copy(
+        update={
+            "candidates": [
+                *context_for(scaffold.run_id).candidates,
+                CandidateApplication(
+                    id="candidate_002",
+                    application_id="app_002",
+                    name=None,
+                    target_job_id="job_001",
+                    resume_file=Path("second_resume.pdf"),
+                ),
+            ]
+        }
+    )
+    profiles = [
+        CandidateProfile(
+            candidate_id="candidate_001",
+            application_id="app_001",
+            role_id="job_001",
+            source_file="resume.pdf",
+            full_name=ExtractedField(value="Sample Candidate", confidence=1.0),
+            extraction_confidence=0.95,
+        ).model_dump(mode="json"),
+        CandidateProfile(
+            candidate_id="candidate_002",
+            application_id="app_002",
+            role_id="job_001",
+            source_file="second_resume.pdf",
+            full_name=ExtractedField(
+                value="Persisted Second Candidate",
+                confidence=1.0,
+            ),
+            extraction_confidence=0.95,
+        ).model_dump(mode="json"),
+    ]
+    final_decision = FinalDecisionArtifact(
+        run_id=scaffold.run_id,
+        bundle_id="bundle_001",
+        scenario_type="combined",
+        decisions=[
+            {
+                "candidate_id": "candidate_002",
+                "application_id": "app_002",
+                "routing_category": RoutingCategory.FAST_TRACK_REVIEW,
+                "reason": "Fast-track review. Human approval is required.",
+                "score": 91.0,
+                "blocking_finding_ids": [],
+                "requires_human_approval": True,
+            }
+        ],
+        findings=[],
+    )
+
+    write_json_artifact(scaffold=scaffold, artifact_key="context_packet", payload=context)
+    write_json_artifact(
+        scaffold=scaffold,
+        artifact_key="candidate_profiles",
+        payload=profiles,
+    )
+    write_final_run_artifacts(scaffold=scaffold, final_decision=final_decision)
+
+    payload = read_json(scaffold.artifacts_dir / "hiring_packet.json")
+
+    assert payload["candidate_summaries"][0]["candidate_name"] == (
+        "Persisted Second Candidate"
+    )
+
+
 def test_metrics_include_routing_counts(tmp_path: Path) -> None:
     scaffold = scaffold_with_inputs(tmp_path)
 
@@ -188,6 +260,60 @@ def test_metrics_include_compliance_credential_and_anomaly_counts(tmp_path: Path
     assert payload["routing_category_counts"] == {"EEO compliance review": 1}
 
 
+def test_final_metrics_preserve_v2_values(tmp_path: Path) -> None:
+    scaffold = scaffold_with_inputs(tmp_path)
+    write_json_artifact(
+        scaffold=scaffold,
+        artifact_key="metrics",
+        payload={
+            "llm_enabled": True,
+            "llm_provider_used": "local-test-provider",
+            "llm_resume_extraction_calls": 2,
+            "local_llm_fallback_used": True,
+            "scanned_resume_detected_count": 1,
+            "interview_schedule_items_created": 3,
+            "fraud_findings_count": 4,
+            "ats_mock_records_loaded": 5,
+        },
+    )
+
+    write_final_run_artifacts(
+        scaffold=scaffold,
+        final_decision=final_decision_for(scaffold.run_id),
+    )
+
+    payload = read_json(scaffold.artifacts_dir / "metrics.json")
+
+    assert payload["llm_enabled"] is True
+    assert payload["llm_provider_used"] == "local-test-provider"
+    assert payload["llm_resume_extraction_calls"] == 2
+    assert payload["local_llm_fallback_used"] is True
+    assert payload["scanned_resume_detected_count"] == 1
+    assert payload["interview_schedule_items_created"] == 3
+    assert payload["fraud_findings_count"] == 4
+    assert payload["ats_mock_records_loaded"] == 5
+
+
+def test_final_metrics_include_v2_defaults(tmp_path: Path) -> None:
+    scaffold = scaffold_with_inputs(tmp_path)
+
+    write_final_run_artifacts(
+        scaffold=scaffold,
+        final_decision=final_decision_for(scaffold.run_id),
+    )
+
+    payload = read_json(scaffold.artifacts_dir / "metrics.json")
+
+    assert payload["llm_enabled"] is False
+    assert payload["llm_provider_used"] is None
+    assert payload["llm_resume_extraction_calls"] == 0
+    assert payload["local_llm_fallback_used"] is False
+    assert payload["scanned_resume_detected_count"] == 0
+    assert payload["interview_schedule_items_created"] == 0
+    assert payload["fraud_findings_count"] == 0
+    assert payload["ats_mock_records_loaded"] == 0
+
+
 def test_audit_log_includes_routing_summary_and_human_approval_reminder(
     tmp_path: Path,
 ) -> None:
@@ -204,6 +330,23 @@ def test_audit_log_includes_routing_summary_and_human_approval_reminder(
     assert "Recommended rejection — human approval required" in text
     assert "## Human Approval Reminder" in text
     assert "Every recommendation requires human approval" in text
+
+
+def test_audit_log_includes_v2_optional_status(tmp_path: Path) -> None:
+    scaffold = scaffold_with_inputs(tmp_path)
+
+    write_final_run_artifacts(
+        scaffold=scaffold,
+        final_decision=final_decision_for(scaffold.run_id),
+    )
+
+    text = (scaffold.artifacts_dir / "audit_log.md").read_text(encoding="utf-8")
+
+    assert "## V2 Optional Feature Status" in text
+    assert "Interview scheduling artifact" in text
+    assert "Fraud findings artifact" in text
+    assert "ATS mock payload" in text
+    assert "not generated" in text
 
 
 def test_artifact_manifest_marks_final_artifacts_created(tmp_path: Path) -> None:

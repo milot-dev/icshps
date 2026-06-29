@@ -11,19 +11,20 @@ from icshps.agents.extraction import run_resume_extraction_stage
 from icshps.agents.intake import run_application_intake
 from icshps.agents.matching import run_matching_stage
 from icshps.agents.orchestrator import build_final_decision_from_run
+from icshps.agents.scheduling import run_interview_schedule_stage
 from icshps.agents.triage import build_exception_triage_findings
 from icshps.agents.verification import run_verification_stage
-from icshps.graph.state import WorkflowState
-from icshps.graph.workflow import (
-    EndToEndWorkflowResult,
-    _append_end_to_end_audit_event,
-    _append_end_to_end_audit_log_section,
-    _append_failure_audit_event,
-    _end_to_end_next_step_for,
-    _read_workflow_artifacts,
-    _set_run_metadata_status,
-    _update_end_to_end_metrics,
+from icshps.graph.finalization import (
+    append_end_to_end_audit_event,
+    append_end_to_end_audit_log_section,
+    append_failure_audit_event,
+    end_to_end_next_step_for,
+    read_workflow_artifacts,
+    set_run_metadata_status,
+    update_end_to_end_metrics,
 )
+from icshps.graph.result import EndToEndWorkflowResult
+from icshps.graph.state import WorkflowState
 from icshps.schemas import FindingsArtifact, RunStatus
 from icshps.services import (
     artifact_path,
@@ -36,6 +37,7 @@ from icshps.services import (
 
 DOWNSTREAM_ARTIFACT_STAGES: tuple[str, ...] = (
     "candidate_profile",
+    "candidate_profiles",
     "match_scores",
     "compliance_flags",
     "verification_findings",
@@ -122,7 +124,7 @@ def prepare_run_node(state: WorkflowState) -> WorkflowState:
         run_id=state.get("run_id"),
         reset=state.get("reset", True),
     )
-    _set_run_metadata_status(scaffold, RunStatus.RUNNING)
+    set_run_metadata_status(scaffold, RunStatus.RUNNING)
 
     loaded_bundle = load_hiring_bundle(state["bundle_path"], run_id=scaffold.run_id)
 
@@ -294,10 +296,21 @@ def routing_and_final_artifacts_node(state: WorkflowState) -> WorkflowState:
         final_decision=final_decision,
         candidate_profiles=list(candidate_profiles),
     )
+    schedule_stage = run_interview_schedule_stage(
+        scaffold=scaffold,
+        final_decision=final_decision,
+    )
 
     return {
         "final_decision": final_decision,
         "compliance_flags_path": compliance_flags_path,
+        "interview_schedule_path": schedule_stage.path,
+        "skipped_stages": _append_values(
+            state,
+            "skipped_stages",
+            schedule_stage.skipped_stages,
+        ),
+        "warnings": _append_values(state, "warnings", schedule_stage.warnings),
     }
 
 
@@ -328,17 +341,17 @@ def _finalize_state(
     loaded_bundle = _required(state, "loaded_bundle")
     intake_result = _required(state, "intake_result")
 
-    artifacts = _read_workflow_artifacts(scaffold.artifact_manifest_path)
+    artifacts = read_workflow_artifacts(scaffold.artifact_manifest_path)
     skipped = tuple(sorted(set(state.get("skipped_stages", ()))))
 
-    _update_end_to_end_metrics(
+    update_end_to_end_metrics(
         scaffold=scaffold,
         loaded_bundle=loaded_bundle,
         status=status,
         created_artifacts=artifacts.created,
         skipped_stages=skipped,
     )
-    _append_end_to_end_audit_event(
+    append_end_to_end_audit_event(
         scaffold=scaffold,
         status=status,
         intake_result=intake_result,
@@ -346,14 +359,14 @@ def _finalize_state(
         pending_artifacts=artifacts.pending,
         skipped_stages=skipped,
     )
-    _append_end_to_end_audit_log_section(
+    append_end_to_end_audit_log_section(
         scaffold=scaffold,
         status=status,
         created_artifacts=artifacts.created,
         pending_artifacts=artifacts.pending,
         skipped_stages=skipped,
     )
-    _set_run_metadata_status(scaffold, RunStatus.COMPLETED)
+    set_run_metadata_status(scaffold, RunStatus.COMPLETED)
 
     return {
         "status": status,
@@ -381,6 +394,7 @@ def _result_from_state(state: WorkflowState) -> EndToEndWorkflowResult:
         compliance_flags_path=state.get("compliance_flags_path"),
         verification_findings_path=state.get("verification_findings_path"),
         anomaly_findings_path=state.get("anomaly_findings_path"),
+        interview_schedule_path=state.get("interview_schedule_path"),
         final_decision=state.get("final_decision"),
         artifact_manifest_path=state.get("artifact_manifest_path"),
         metrics_path=state.get("metrics_path"),
@@ -390,7 +404,7 @@ def _result_from_state(state: WorkflowState) -> EndToEndWorkflowResult:
         skipped_stages=state.get("skipped_stages", ()),
         warnings=state.get("warnings", ()),
         errors=state.get("errors", ()),
-        next_step=_end_to_end_next_step_for(status),
+        next_step=end_to_end_next_step_for(status),
     )
 
 
@@ -402,9 +416,9 @@ def _failed_result_from_state(
     scaffold = state.get("scaffold")
 
     if scaffold is not None:
-        _append_failure_audit_event(scaffold=scaffold, error=error)
-        _set_run_metadata_status(scaffold, RunStatus.FAILED)
-        artifacts = _read_workflow_artifacts(scaffold.artifact_manifest_path)
+        append_failure_audit_event(scaffold=scaffold, error=error)
+        set_run_metadata_status(scaffold, RunStatus.FAILED)
+        artifacts = read_workflow_artifacts(scaffold.artifact_manifest_path)
         state = {
             **state,
             "status": "failed",
@@ -426,6 +440,7 @@ def _failed_result_from_state(
         compliance_flags_path=None,
         verification_findings_path=None,
         anomaly_findings_path=None,
+        interview_schedule_path=None,
         final_decision=None,
         artifact_manifest_path=None,
         metrics_path=None,
@@ -435,7 +450,7 @@ def _failed_result_from_state(
         skipped_stages=(),
         warnings=(),
         errors=(error,),
-        next_step=_end_to_end_next_step_for("failed"),
+        next_step=end_to_end_next_step_for("failed"),
     )
 
 

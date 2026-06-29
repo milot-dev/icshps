@@ -7,6 +7,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel
 
+JsonPayload = BaseModel | dict[str, Any] | list[Any]
+
 
 def read_json_object(path: Path, *, default_empty: bool = False) -> dict[str, Any]:
     if default_empty and not path.exists():
@@ -20,7 +22,7 @@ def read_json_object(path: Path, *, default_empty: bool = False) -> dict[str, An
     return raw
 
 
-def write_json(path: Path, payload: BaseModel | dict[str, Any]) -> None:
+def write_json(path: Path, payload: JsonPayload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     data = (

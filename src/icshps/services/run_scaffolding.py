@@ -16,6 +16,18 @@ from icshps.utils.file_io import append_jsonl, write_json, write_text
 from icshps.utils.ids import deterministic_name_id
 
 
+V2_METRIC_DEFAULTS: dict[str, Any] = {
+    "llm_enabled": False,
+    "llm_provider_used": None,
+    "llm_resume_extraction_calls": 0,
+    "local_llm_fallback_used": False,
+    "scanned_resume_detected_count": 0,
+    "interview_schedule_items_created": 0,
+    "fraud_findings_count": 0,
+    "ats_mock_records_loaded": 0,
+}
+
+
 @dataclass(frozen=True)
 class RunScaffold:
     """Convenience object containing important paths for one run."""
@@ -180,6 +192,11 @@ def build_artifact_manifest(scaffold: RunScaffold) -> RunArtifactManifest:
                 owner="Member 2",
                 description="Extracted candidate profile with confidence and evidence.",
             ),
+            "candidate_profiles": ArtifactRef(
+                path=Path("artifacts/candidate_profiles.json"),
+                owner="Member 2",
+                description="All extracted candidate profiles for multi-candidate runs.",
+            ),
             "match_scores": ArtifactRef(
                 path=Path("artifacts/match_scores.json"),
                 owner="Member 2",
@@ -217,8 +234,26 @@ def build_artifact_manifest(scaffold: RunScaffold) -> RunArtifactManifest:
             ),
             "interview_schedule": ArtifactRef(
                 path=Path("artifacts/interview_schedule.json"),
-                owner="Stretch",
-                description="Optional mock interview routing/schedule artifact.",
+                owner="Member 2",
+                description=(
+                    "Optional v2 mock interview schedule suggestions requiring "
+                    "human confirmation."
+                ),
+                required_for_mvp=False,
+            ),
+            "fraud_findings": ArtifactRef(
+                path=Path("artifacts/fraud_findings.json"),
+                owner="Member 3",
+                description="Optional v2 fraud-specific risk findings for human review.",
+                required_for_mvp=False,
+            ),
+            "ats_payload": ArtifactRef(
+                path=Path("artifacts/ats_payload.json"),
+                owner="Member 3",
+                description=(
+                    "Optional v2 mock ATS-ready output payload. No real ATS API "
+                    "is called."
+                ),
                 required_for_mvp=False,
             ),
             "audit_log": ArtifactRef(
@@ -258,7 +293,7 @@ def build_initial_audit_log(scaffold: RunScaffold) -> str:
         "## Pending next steps\n\n"
         "- Task 5: Bundle Loader writes `inputs/manifest_snapshot.yaml` and validates files.\n"
         "- Task 6: Intake Agent writes `inputs/context_packet.json` and `artifacts/intake_findings.json`.\n"
-        "- Member 2 writes `candidate_profile.json` and `match_scores.json`.\n"
+        "- Member 2 writes `candidate_profile.json`, `candidate_profiles.json`, and `match_scores.json`.\n"
         "- Member 3 writes compliance, verification, and anomaly findings.\n"
     )
 
@@ -270,6 +305,7 @@ def build_initial_metrics(scaffold: RunScaffold) -> dict[str, Any]:
         "run_id": scaffold.run_id,
         "status": "created",
         "candidate_count": 0,
+        **V2_METRIC_DEFAULTS,
         "artifacts_created": [
             "run_metadata.json",
             "artifact_manifest.json",

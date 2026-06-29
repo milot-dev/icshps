@@ -26,7 +26,8 @@ The project focuses on controlled agent style processing, traceable evidence, sh
 ## Project State
 
 The project is a local deterministic MVP backend with expanded
-multi-candidate, triage, verification, and single-PDF demo support.
+multi-candidate, triage, verification, single-PDF demo, and optional
+LLM-assisted extraction recovery support.
 
 The repository includes:
 
@@ -36,11 +37,12 @@ The repository includes:
 - deterministic run scaffolding
 - Hiring Bundle loader and validation
 - Application Intake / Context Agent
-- deterministic end-to-end backend workflow
-- optional LangGraph orchestration path
+- deterministic LangGraph backend workflow
 - clean-PDF resume text extraction baseline
 - candidate profile extraction baseline
 - multi-candidate pipeline handling
+- persisted multi-profile extraction artifacts
+- optional LangChain/OpenAI extraction recovery for weak deterministic parses
 - synthetic profile fallback
 - JD matching baseline
 - EEO compliance checks baseline
@@ -99,6 +101,7 @@ runs/<run_id>/
   artifacts/
     intake_findings.json
     candidate_profile.json
+    candidate_profiles.json
     match_scores.json
     compliance_flags.md
     verification_findings.json
@@ -114,9 +117,13 @@ runs/<run_id>/
 
 The pipeline runs through scaffolding, bundle loading, validation, intake, extraction, matching, verification, compliance checks, anomaly detection, exception triage, routing, and final artifact generation.
 
-The default engine remains the stable pure Python workflow. A minimal LangGraph engine is also available through `--engine langgraph`; it preserves the same deterministic stage order and calls the same existing stage runners.
+`candidate_profile.json` remains the compatibility artifact for the primary candidate profile. `candidate_profiles.json` stores the full ordered list of extracted candidate profiles for multi-candidate runs.
+
+The backend pipeline uses LangGraph orchestration by default. The optional `--engine langgraph` flag is accepted for explicit runs; the previous pure-Python engine is no longer supported.
 
 All final routing recommendations are decision support outputs and require human approval.
+
+Optional LLM extraction recovery is disabled by default. When enabled, deterministic extraction still runs first, and the LangChain/OpenAI helper is only used as a recovery path for low-confidence or incomplete resume extraction. LLM output is schema validated, evidence checked against resume text, rejected if it contains hiring or routing recommendation language, and falls back safely to deterministic extraction on provider, schema, or validation failure.
 
 ---
 
@@ -132,17 +139,17 @@ ICSHPS/
 │
 ├── scripts/                         # Local CLI scripts for running and validating the pipeline
 │   ├── run_pipeline.py              # Main one command backend pipeline runner
-│   ├── run_end_to_end_workflow.py   # End to end workflow runner
 │   ├── validate_candidate_bundle.py # Single Hiring Bundle validation
 │   └── validate_scenario_bundles.py # MVP scenario validation
 │
 ├── src/
 │   └── icshps/
 │       ├── agents/                  # Agent and stage logic
-│       ├── graph/                   # Python and LangGraph workflow orchestration layer
-│       │   ├── workflow.py          # Stable deterministic MVP workflow
+│       ├── graph/                   # LangGraph workflow orchestration layer
+│       │   ├── result.py            # Shared workflow result contract
+│       │   ├── finalization.py      # Shared finalization helpers
 │       │   ├── state.py             # LangGraph runtime state definition
-│       │   └── langgraph_workflow.py # Optional LangGraph orchestration path
+│       │   └── langgraph_workflow.py # LangGraph runner and orchestration nodes
 │       ├── policies/                # Reserved policy configuration package
 │       ├── schemas/                 # Shared Pydantic schema contracts
 │       ├── services/                # Bundle loading, artifact writing, run scaffolding
@@ -178,7 +185,7 @@ Run the backend pipeline for a Hiring Bundle:
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset
 ```
 
-Run the same backend pipeline through LangGraph orchestration:
+Run the backend pipeline with an explicit LangGraph engine flag:
 
 ```bash
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset --engine langgraph
@@ -189,6 +196,46 @@ Run the backend pipeline for a single clean PDF resume:
 ```bash
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application/resumes/candidate_clean_001_resume.pdf --runs-root runs --reset
 ```
+
+Run the LLM recovery demo bundle:
+
+```bash
+uv run python scripts/run_pipeline.py data/hiring_bundles/llm_recovery_skill_demo --runs-root runs --reset
+```
+
+Enable optional LLM recovery in a local `.env` or terminal environment:
+
+```text
+ICSHPS_LLM_EXTRACTION_ENABLED=true
+OPENAI_API_KEY=your_key_here
+ICSHPS_LLM_EXTRACTION_MODEL=gpt-4o-mini
+ICSHPS_LLM_EXTRACTION_MAX_TOKENS=1200
+```
+
+Keep `ICSHPS_LLM_EXTRACTION_ENABLED=false` for deterministic-only runs, CI, offline development, or when no OpenAI quota is available. Do not commit local `.env` files.
+
+Enable optional V2 Google Calendar interview schedule suggestions with environment
+configuration:
+
+```text
+ICSHPS_INTERVIEW_PANEL_MEMBERS_JSON=[{"name":"Panel Member","email":"panel@example.com","calendar_id":"panel@example.com"}]
+ICSHPS_GOOGLE_CALENDAR_CREDENTIALS_FILE=C:\path\to\service-account.json
+ICSHPS_INTERVIEW_TIMEZONE=Europe/Belgrade
+ICSHPS_INTERVIEW_DURATION_MINUTES=45
+ICSHPS_INTERVIEW_SEARCH_WORKDAYS=10
+ICSHPS_INTERVIEW_WORKDAY_START=10:00
+ICSHPS_INTERVIEW_WORKDAY_END=17:00
+```
+
+The scheduler uses Google Calendar FreeBusy availability lookup to write
+`artifacts/interview_schedule.json` after final routing, but only creates
+schedule suggestions for candidates a reviewer has approved for scheduling in
+the Streamlit app. Schedule suggestions keep `requires_human_confirmation=true`.
+The Calendar Queue displays those proposals in Kosovo time for a reviewer to
+confirm manually. This feature does not create calendar events, add attendees,
+or send candidate invitations. Missing reviewer approval, Calendar credentials,
+availability access, or panel config produces controlled warnings instead of
+failing the pipeline.
 
 Run scenario validation for all available MVP Hiring Bundles:
 
