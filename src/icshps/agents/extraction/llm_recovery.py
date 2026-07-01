@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from pydantic import Field
 
 from icshps.schemas.common import EvidenceRef, ICSHPSBaseModel
+from icshps.agents.extraction.pdf_bounding_boxes import find_text_bounding_box
 from icshps.schemas.profile import (
     CertificationRecord,
     EducationRecord,
@@ -41,6 +42,7 @@ RECOMMENDATION_TERMS = (
     "pass",
     "fail",
 )
+
 
 class LLMExtractedField(ICSHPSBaseModel):
     value: str | None = None
@@ -110,7 +112,9 @@ class LLMExtractionRecovery(ICSHPSBaseModel):
 
 
 class LLMRecoveryProvider(Protocol):
-    def recover(self, *, resume_text: str, trigger_reasons: list[str]) -> LLMExtractionRecovery:
+    def recover(
+        self, *, resume_text: str, trigger_reasons: list[str]
+    ) -> LLMExtractionRecovery:
         """Return strict extraction recovery output from a provider."""
 
 
@@ -119,6 +123,7 @@ class LLMRecoveryMetrics:
     enabled: bool = False
     available: bool = False
     called: bool = False
+    provider: str | None = None
     trigger_reasons: list[str] = field(default_factory=list)
     accepted_field_count: int = 0
     rejected_field_count: int = 0
@@ -133,6 +138,7 @@ class LLMRecoveryMetrics:
             "enabled": self.enabled,
             "available": self.available,
             "called": self.called,
+            "provider": self.provider,
             "trigger_reasons": sorted(set(self.trigger_reasons)),
             "accepted_field_count": self.accepted_field_count,
             "rejected_field_count": self.rejected_field_count,
@@ -159,14 +165,20 @@ class LLMRecoveryResult:
 
 
 class LangChainOpenAIRecoveryProvider:
-    def __init__(self, *, model: str | None = None, max_tokens: int | None = None) -> None:
+    provider_name = "openai_chat_completions"
+
+    def __init__(
+        self, *, model: str | None = None, max_tokens: int | None = None
+    ) -> None:
         self.model = model or os.getenv(
             LLM_EXTRACTION_MODEL_ENV,
             DEFAULT_LLM_EXTRACTION_MODEL,
         )
         self.max_tokens = max_tokens or llm_recovery_max_tokens()
 
-    def recover(self, *, resume_text: str, trigger_reasons: list[str]) -> LLMExtractionRecovery:
+    def recover(
+        self, *, resume_text: str, trigger_reasons: list[str]
+    ) -> LLMExtractionRecovery:
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
             from langchain_openai import ChatOpenAI
@@ -294,6 +306,7 @@ def apply_llm_recovery(
             metrics=metrics,
         )
 
+    metrics.provider = _provider_name(active_provider)
     try:
         metrics.called = True
         recovery = active_provider.recover(
@@ -338,6 +351,13 @@ def apply_llm_recovery(
         else "deterministic"
     )
     return merge
+
+
+def _provider_name(provider: LLMRecoveryProvider) -> str:
+    configured_name = getattr(provider, "provider_name", None)
+    if isinstance(configured_name, str) and configured_name.strip():
+        return configured_name.strip()
+    return type(provider).__name__
 
 
 def llm_recovery_enabled() -> bool:
@@ -428,7 +448,9 @@ def llm_recovery_trigger_reasons(
     if (
         not employment_history
         and section_confidence.get("employment_history", 0.0) == 0.0
-        and _has_section_like_text(resume_text, ("experience", "employment", "work history"))
+        and _has_section_like_text(
+            resume_text, ("experience", "employment", "work history")
+        )
     ):
         reasons.append("employment_section_missing")
 
@@ -458,8 +480,7 @@ def _merge_recovery(
     metrics: LLMRecoveryMetrics,
 ) -> LLMRecoveryResult:
     manual_review_flags: list[str] = [
-        f"LLM recovery rejected item: {item.reason}"
-        for item in recovery.rejected_items
+        f"LLM recovery rejected item: {item.reason}" for item in recovery.rejected_items
     ]
     metrics.rejected_field_count += len(recovery.rejected_items)
 
@@ -598,16 +619,19 @@ def _maybe_fill_optional_field(
     if current and current.value and current.evidence:
         return current
 
-    return _accepted_llm_field(
-        candidate=candidate,
-        resume_text=resume_text,
-        source_path=source_path,
-        section=section,
-        field_path=field_path,
-        evidence_id=evidence_id,
-        metrics=metrics,
-        manual_review_flags=manual_review_flags,
-    ) or current
+    return (
+        _accepted_llm_field(
+            candidate=candidate,
+            resume_text=resume_text,
+            source_path=source_path,
+            section=section,
+            field_path=field_path,
+            evidence_id=evidence_id,
+            metrics=metrics,
+            manual_review_flags=manual_review_flags,
+        )
+        or current
+    )
 
 
 def _accepted_llm_field(
@@ -980,7 +1004,9 @@ def _accepted_evidence(
     metrics: LLMRecoveryMetrics,
     manual_review_flags: list[str],
 ) -> EvidenceRef | None:
-    if _contains_recommendation_language(value) or _contains_recommendation_language(snippet):
+    if _contains_recommendation_language(value) or _contains_recommendation_language(
+        snippet
+    ):
         metrics.recommendation_violation_count += 1
         metrics.rejected_field_count += 1
         manual_review_flags.append(
@@ -996,16 +1022,25 @@ def _accepted_evidence(
         return None
 
     normalized_snippet = normalize_whitespace(snippet)[:240]
+    bounding_box_result = find_text_bounding_box(source_path, normalized_snippet)
+    extraction_method = (
+        "llm_recovery_vision"
+        if bounding_box_result.source_method == "llm_vision_ocr"
+        else "llm_recovery"
+    )
     return EvidenceRef(
         evidence_id=evidence_id,
         field_path=field_path,
         source_path=source_path,
-        source_type="resume_pdf" if source_path.suffix.lower() == ".pdf" else "resume_text",
-        page_number=None,
+        source_type="resume_pdf"
+        if source_path.suffix.lower() == ".pdf"
+        else "resume_text",
+        page_number=bounding_box_result.page_number,
         section=section,
         text_snippet=normalized_snippet,
         confidence=confidence,
-        extraction_method="llm_recovery",
+        extraction_method=extraction_method,
+        bounding_box=bounding_box_result.bounding_box,
     )
 
 
@@ -1021,7 +1056,10 @@ def _contains_recommendation_language(value: str | None) -> bool:
 
 
 def _snippet_in_resume(snippet: str, resume_text: str) -> bool:
-    return normalize_whitespace(snippet).lower() in normalize_whitespace(resume_text).lower()
+    return (
+        normalize_whitespace(snippet).lower()
+        in normalize_whitespace(resume_text).lower()
+    )
 
 
 def _supported_record_value(
@@ -1095,7 +1133,10 @@ def _supported_current_status(
 
 
 def _value_in_snippet(value: str | int, snippet: str) -> bool:
-    return normalize_whitespace(str(value)).lower() in normalize_whitespace(snippet).lower()
+    return (
+        normalize_whitespace(str(value)).lower()
+        in normalize_whitespace(snippet).lower()
+    )
 
 
 def _empty_recovery_section_count(
