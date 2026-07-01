@@ -1,0 +1,10 @@
+must_have:
+- Python
+- FastAPI
+- SQL
+nice_to_have:
+- LangGraph
+- Docker
+- Git
+- Machine Learning
+mandatory_certifications: []

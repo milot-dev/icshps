@@ -38,7 +38,7 @@ The repository includes:
 - Hiring Bundle loader and validation
 - Application Intake / Context Agent
 - deterministic LangGraph backend workflow
-- clean-PDF resume text extraction baseline
+- native PDF extraction with optional vision transcription for scanned resume pages
 - candidate profile extraction baseline
 - multi-candidate pipeline handling
 - persisted multi-profile extraction artifacts
@@ -64,7 +64,7 @@ The repository includes:
 The MVP backend workflow executes a deterministic end-to-end hiring pipeline:
 
 ```text
-Hiring Bundle or Single Clean PDF Resume
+Hiring Bundle or Single PDF Resume
    ↓
 Run Scaffolding
    ↓
@@ -124,6 +124,8 @@ The backend pipeline uses LangGraph orchestration by default. The optional `--en
 All final routing recommendations are decision support outputs and require human approval.
 
 Optional LLM extraction recovery is disabled by default. When enabled, deterministic extraction still runs first, and the LangChain/OpenAI helper is only used as a recovery path for low-confidence or incomplete resume extraction. LLM output is schema validated, evidence checked against resume text, rejected if it contains hiring or routing recommendation language, and falls back safely to deterministic extraction on provider, schema, or validation failure.
+
+Optional vision OCR is also disabled by default. When enabled, native PyMuPDF text extraction still runs first. Image-based pages are rendered locally and sent to the OpenAI Responses API for transcription only when native text is unavailable or insufficient. Vision-derived evidence retains the PDF page number but intentionally has no bounding box or invented model confidence. Its confidence is reduced and every vision-backed profile is routed to manual review. Text-based LLM recovery remains a separate, optional evidence-checked layer.
 
 ---
 
@@ -191,7 +193,7 @@ Run the backend pipeline with an explicit LangGraph engine flag:
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset --engine langgraph
 ```
 
-Run the backend pipeline for a single clean PDF resume:
+Run the backend pipeline for a single PDF resume:
 
 ```bash
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application/resumes/candidate_clean_001_resume.pdf --runs-root runs --reset
@@ -236,6 +238,17 @@ confirm manually. This feature does not create calendar events, add attendees,
 or send candidate invitations. Missing reviewer approval, Calendar credentials,
 availability access, or panel config produces controlled warnings instead of
 failing the pipeline.
+
+Enable scanned-PDF vision OCR separately:
+
+```text
+ICSHPS_VISION_OCR_ENABLED=true
+ICSHPS_VISION_OCR_MODEL=gpt-4o-mini
+ICSHPS_VISION_OCR_DPI=200
+ICSHPS_VISION_OCR_MAX_OUTPUT_TOKENS=4000
+```
+
+Vision OCR uses the same `OPENAI_API_KEY`, and that key must have **Write** permission for Responses (`/v1/responses`). PDF page images are sent as in-memory base64 inputs and are not written as additional artifacts. If the API is disabled, unavailable, denied, or returns no usable transcription, the pipeline records a controlled warning and retains the existing fallback behavior.
 
 Run scenario validation for all available MVP Hiring Bundles:
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from icshps.graph import run_langgraph_workflow
+from icshps.schemas import InterviewScheduleArtifact
 
 V2_DEMO_BUNDLE = Path("data/hiring_bundles/v2_stretch_demo")
 
@@ -28,8 +29,7 @@ REQUIRED_OUTPUTS = (
     "artifacts/audit_log.md",
 )
 
-OPTIONAL_V2_ARTIFACTS = (
-    "artifacts/interview_schedule.json",
+UNIMPLEMENTED_V2_ARTIFACTS = (
     "artifacts/fraud_findings.json",
     "artifacts/ats_payload.json",
 )
@@ -82,5 +82,13 @@ def test_v2_demo_fixture_future_mock_files_do_not_create_fake_artifacts(
     assert result.status == "completed"
     assert result.run_dir is not None
 
-    for relative_path in OPTIONAL_V2_ARTIFACTS:
+    schedule_path = result.run_dir / "artifacts/interview_schedule.json"
+    assert schedule_path.exists()
+    schedule = InterviewScheduleArtifact.model_validate_json(
+        schedule_path.read_text(encoding="utf-8")
+    )
+    assert schedule.items == []
+    assert schedule.warnings
+
+    for relative_path in UNIMPLEMENTED_V2_ARTIFACTS:
         assert not (result.run_dir / relative_path).exists(), relative_path
