@@ -16,6 +16,7 @@ from icshps.schemas import (
     Finding,
     FindingCategory,
     InterviewScheduleArtifact,
+    InterviewScheduleEventsArtifact,
     InterviewScheduleItem,
     InterviewScheduleWarning,
     RoutingCategory,
@@ -56,6 +57,8 @@ def run_interview_schedule_stage(
     final_decision: FinalDecisionArtifact | None = None,
     provider: FreeBusyProvider | None = None,
     now: datetime | None = None,
+    reschedule_candidate_id: str | None = None,
+    reschedule_application_id: str | None = None,
 ) -> AgentStageResult:
     """Write advisory interview schedule suggestions after final routing."""
 
@@ -190,8 +193,51 @@ def run_interview_schedule_stage(
             warnings=tuple(warning.message for warning in warnings),
         )
 
-    items: list[InterviewScheduleItem] = []
-    reserved_slots: list[BusyInterval] = []
+    target_key = (
+        (reschedule_candidate_id, reschedule_application_id)
+        if reschedule_candidate_id and reschedule_application_id
+        else None
+    )
+    existing_schedule = _read_schedule_artifact(scaffold)
+    existing_events = _read_schedule_events_artifact(scaffold)
+    all_event_artifacts = _read_schedule_event_artifacts(scaffold)
+    created_event_keys = {
+        (event.candidate_id, event.application_id) for event in existing_events.events
+    }
+    if target_key in created_event_keys:
+        warnings.append(
+            InterviewScheduleWarning(
+                code="INTERVIEW_EVENT_ALREADY_CREATED",
+                message="This candidate already has a created calendar hold.",
+                candidate_id=target_key[0],
+                application_id=target_key[1],
+            )
+        )
+
+    preserved_items = [
+        item
+        for item in existing_schedule.items
+        if (item.candidate_id, item.application_id) in created_event_keys
+        or (
+            target_key is not None
+            and (item.candidate_id, item.application_id) != target_key
+        )
+    ]
+    decisions_to_schedule = [
+        decision
+        for decision in approved_decisions
+        if (decision.candidate_id, decision.application_id) not in created_event_keys
+        and (
+            target_key is None
+            or (decision.candidate_id, decision.application_id) == target_key
+        )
+    ]
+    items: list[InterviewScheduleItem] = list(preserved_items)
+    reserved_slots = build_reserved_slots(
+        schedule=existing_schedule if target_key is not None else None,
+        event_artifacts=all_event_artifacts,
+        panel_calendar_ids={member.calendar_id for member in config.panel_members},
+    )
     candidate_slots = _candidate_slots(
         now=now,
         timezone=config.timezone,
@@ -201,11 +247,13 @@ def run_interview_schedule_stage(
         duration_minutes=config.duration_minutes,
     )
 
-    for decision in approved_decisions:
+    for decision in decisions_to_schedule:
         slot = _first_available_slot(
             candidate_slots=candidate_slots,
             duration_minutes=config.duration_minutes,
-            panel_calendar_ids=tuple(member.calendar_id for member in config.panel_members),
+            panel_calendar_ids=tuple(
+                member.calendar_id for member in config.panel_members
+            ),
             busy_by_calendar=busy_by_calendar,
             reserved_slots=reserved_slots,
         )
@@ -548,6 +596,66 @@ def _first_available_slot(
 
 def _overlaps(left: BusyInterval, right: BusyInterval) -> bool:
     return left.start < right.end and right.start < left.end
+
+
+def build_reserved_slots(
+    *,
+    schedule: InterviewScheduleArtifact | None,
+    event_artifacts: Sequence[InterviewScheduleEventsArtifact],
+    panel_calendar_ids: set[str],
+) -> list[BusyInterval]:
+    """Build reserved panel intervals from proposed slots and created holds."""
+
+    intervals = (
+        [
+            BusyInterval(
+                start=item.suggested_time,
+                end=item.suggested_time + timedelta(minutes=item.duration_minutes),
+            )
+            for item in schedule.items
+        ]
+        if schedule is not None
+        else []
+    )
+    intervals.extend(
+        BusyInterval(start=event.start, end=event.end)
+        for artifact in event_artifacts
+        for event in artifact.events
+        if event.status == "created" and event.calendar_id in panel_calendar_ids
+    )
+    return intervals
+
+
+def _read_schedule_artifact(scaffold: RunScaffold) -> InterviewScheduleArtifact:
+    path = scaffold.artifacts_dir / "interview_schedule.json"
+    if not path.exists():
+        return InterviewScheduleArtifact(run_id=scaffold.run_id)
+    return InterviewScheduleArtifact.model_validate(read_json_object(path))
+
+
+def _read_schedule_events_artifact(
+    scaffold: RunScaffold,
+) -> InterviewScheduleEventsArtifact:
+    path = scaffold.artifacts_dir / "interview_schedule_events.json"
+    if not path.exists():
+        return InterviewScheduleEventsArtifact(run_id=scaffold.run_id)
+    return InterviewScheduleEventsArtifact.model_validate(read_json_object(path))
+
+
+def _read_schedule_event_artifacts(
+    scaffold: RunScaffold,
+) -> list[InterviewScheduleEventsArtifact]:
+    artifacts: list[InterviewScheduleEventsArtifact] = []
+    for path in scaffold.run_dir.parent.glob(
+        "*/artifacts/interview_schedule_events.json"
+    ):
+        try:
+            artifacts.append(
+                InterviewScheduleEventsArtifact.model_validate(read_json_object(path))
+            )
+        except OSError, ValueError:
+            continue
+    return artifacts
 
 
 def _artifact(

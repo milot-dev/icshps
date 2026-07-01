@@ -30,6 +30,7 @@ def test_artifact_catalog_returns_all_expected_artifacts(tmp_path: Path) -> None
             "hiring_packet",
             "intake_findings",
             "interview_schedule",
+            "interview_schedule_events",
             "manifest_snapshot",
             "match_scores",
             "metrics",
@@ -72,7 +73,12 @@ def test_artifact_catalog_handles_optional_artifacts(tmp_path: Path) -> None:
     result = read_artifact_catalog(scaffold.run_dir)
     by_key = {artifact.key: artifact for artifact in result.artifacts}
 
-    for key in ("interview_schedule", "fraud_findings", "ats_payload"):
+    for key in (
+        "interview_schedule",
+        "interview_schedule_events",
+        "fraud_findings",
+        "ats_payload",
+    ):
         assert by_key[key].required_for_mvp is False
         assert by_key[key].status == "not_generated_yet"
 

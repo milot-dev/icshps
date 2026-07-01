@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 
-from icshps.agents.scheduling import run_interview_schedule_stage
+from icshps.agents.scheduling import (
+    approve_and_create_interview_event,
+    run_interview_schedule_stage,
+)
 from icshps.graph import run_langgraph_workflow
 from icshps.services import RunScaffold
 from icshps.services.artifact_catalog import ArtifactCatalogItem, read_artifact_catalog
@@ -17,6 +21,7 @@ from icshps.services.reviewer_approvals import (
     read_reviewer_approvals,
     upsert_reviewer_approval,
 )
+from icshps.utils.file_io import read_json_object
 from icshps.utils.streamlit import (
     artifact_kind as _artifact_kind,
     build_calendar_queue_rows,
@@ -59,6 +64,7 @@ DISPLAY_ARTIFACT_KEYS: tuple[str, ...] = (
     "shortlist",
     "hiring_packet",
     "interview_schedule",
+    "interview_schedule_events",
     "fraud_findings",
     "ats_payload",
     "metrics",
@@ -74,6 +80,7 @@ SCHEDULE_GENERATION_NOTICE_KEY = "schedule_generation_notice"
 
 
 def main() -> None:
+    load_dotenv()
     st.set_page_config(page_title="ICSHPS Review Workspace", layout="wide")
     _inject_styles()
 
@@ -112,7 +119,7 @@ def main() -> None:
         _render_approvals(run_state, reviewer_name=reviewer_name)
 
     with tabs[4]:
-        _render_calendar_queue(run_state)
+        _render_calendar_queue(run_state, reviewer_name=reviewer_name)
 
     with tabs[5]:
         _render_artifacts(run_state)
@@ -135,7 +142,9 @@ def _sidebar_run_selector(runs_root: Path) -> Path | None:
 
 def _render_run_intake(selected_run: Path | None) -> Path | None:
     st.subheader("Run Intake")
-    st.caption("Start from a scenario bundle, upload a bundle ZIP, or run every local scenario.")
+    st.caption(
+        "Start from a scenario bundle, upload a bundle ZIP, or run every local scenario."
+    )
 
     bundle_dirs = _bundle_directories(BUNDLES_ROOT)
     bundle_labels = [bundle.name for bundle in bundle_dirs]
@@ -189,7 +198,9 @@ def _render_single_bundle_runner(
     if st.button("Run selected bundle", type="primary", use_container_width=True):
         bundle_path = Path(custom_path.strip()) if custom_path.strip() else None
         if bundle_path is None and selected_label:
-            bundle_path = next(bundle for bundle in bundle_dirs if bundle.name == selected_label)
+            bundle_path = next(
+                bundle for bundle in bundle_dirs if bundle.name == selected_label
+            )
 
         if bundle_path is None:
             st.error("Choose a bundle before running the pipeline.")
@@ -273,7 +284,9 @@ def _render_all_scenarios_runner(
 
     batch_results = st.session_state.get("last_batch_results")
     if batch_results:
-        st.dataframe(pd.DataFrame(batch_results), use_container_width=True, hide_index=True)
+        st.dataframe(
+            pd.DataFrame(batch_results), use_container_width=True, hide_index=True
+        )
 
     return selected_run
 
@@ -347,6 +360,12 @@ def _load_run_state(selected_run: Path | None) -> dict[str, Any]:
         catalog.artifacts if catalog.ok else (),
         display_artifact_keys=DISPLAY_ARTIFACT_KEYS,
     )
+    payloads.setdefault(
+        "interview_schedule_events",
+        _read_optional_json(
+            selected_run / "artifacts" / "interview_schedule_events.json"
+        ),
+    )
     approvals_result = read_reviewer_approvals(selected_run)
     candidate_rows = build_candidate_review_rows(
         final_decision=payloads.get("final_decision"),
@@ -400,7 +419,9 @@ def _render_selected_run_dashboard(run_state: dict[str, Any]) -> None:
     cols[4].metric("Schedule Items", metrics.get("interview_schedule_items_created", 0))
 
     st.markdown("#### Routing")
-    routing_counts = metrics.get("routing_category_counts") or metrics.get("routing_counts")
+    routing_counts = metrics.get("routing_category_counts") or metrics.get(
+        "routing_counts"
+    )
     if routing_counts:
         st.dataframe(
             pd.DataFrame(
@@ -421,7 +442,9 @@ def _render_selected_run_dashboard(run_state: dict[str, Any]) -> None:
     readiness_cols = st.columns(4)
     readiness_cols[0].metric("LLM enabled", _yes_no(metrics.get("llm_enabled", False)))
     readiness_cols[1].metric("LLM calls", metrics.get("llm_resume_extraction_calls", 0))
-    readiness_cols[2].metric("Recovery called", _yes_no(llm_recovery.get("called", False)))
+    readiness_cols[2].metric(
+        "Recovery called", _yes_no(llm_recovery.get("called", False))
+    )
     readiness_cols[3].metric(
         "Approval file",
         "ready" if approvals_result is not None and approvals_result.ok else "check",
@@ -531,7 +554,9 @@ def _render_candidate_review(run_state: dict[str, Any]) -> None:
         "Candidate detail",
         options=[_candidate_key(row) for row in filtered_rows],
     )
-    selected_row = next(row for row in filtered_rows if _candidate_key(row) == selected_key)
+    selected_row = next(
+        row for row in filtered_rows if _candidate_key(row) == selected_key
+    )
     _render_candidate_detail(run_state, selected_row)
 
 
@@ -584,7 +609,9 @@ def _render_approvals(run_state: dict[str, Any], *, reviewer_name: str) -> None:
         return
 
     st.subheader("Approvals")
-    st.caption("Approvals are local decision-support records, not final hiring actions.")
+    st.caption(
+        "Approvals are local decision-support records, not final hiring actions."
+    )
 
     selected_key = st.selectbox(
         "Candidate",
@@ -601,9 +628,7 @@ def _render_approvals(run_state: dict[str, Any], *, reviewer_name: str) -> None:
     )
 
     approvals = [
-        row
-        for row in rows
-        if row["approval_action"] in APPROVAL_OPTIONS.values()
+        row for row in rows if row["approval_action"] in APPROVAL_OPTIONS.values()
     ]
     st.markdown("#### Recorded Decisions")
     if approvals:
@@ -663,7 +688,7 @@ def _render_approval_form(
             st.rerun()
 
 
-def _render_calendar_queue(run_state: dict[str, Any]) -> None:
+def _render_calendar_queue(run_state: dict[str, Any], *, reviewer_name: str) -> None:
     if run_state["run_dir"] is None:
         st.info("No run selected yet.")
         return
@@ -671,17 +696,21 @@ def _render_calendar_queue(run_state: dict[str, Any]) -> None:
     st.subheader("Interview Scheduling")
     st.caption(
         "Find human-reviewable interview slots for approved candidates using "
-        "Google Calendar availability. No events or invitations are created."
+        "Google Calendar availability. Confirming creates a calendar hold but "
+        "does not send invitations."
     )
     _render_schedule_generation_notice()
 
     schedule_payload = run_state["payloads"].get("interview_schedule")
+    event_payload = run_state["payloads"].get("interview_schedule_events")
     queue_rows = build_calendar_queue_rows(run_state["candidate_rows"])
     items = _schedule_items(schedule_payload)
+    events = _schedule_events(event_payload)
 
     _render_scheduling_progress(
         approved_count=len(queue_rows),
         suggested_count=len(items),
+        created_count=len(events),
     )
     _render_schedule_warnings(schedule_payload)
 
@@ -690,11 +719,8 @@ def _render_calendar_queue(run_state: dict[str, Any]) -> None:
         _render_schedule_suggestions(
             run_state=run_state,
             items=items,
-        )
-        _render_schedule_generation_button(
-            run_state["run_dir"],
-            label="Refresh available slots",
-            help_text="Re-check panel availability and rebuild the proposed slots.",
+            events=events,
+            reviewer_name=reviewer_name,
         )
         return
 
@@ -727,16 +753,23 @@ def _render_schedule_suggestions(
     *,
     run_state: dict[str, Any],
     items: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    reviewer_name: str,
 ) -> None:
     candidate_by_key = {
         (row.get("candidate_id"), row.get("application_id")): row
         for row in run_state["candidate_rows"]
+    }
+    event_by_key = {
+        (event.get("candidate_id"), event.get("application_id")): event
+        for event in events
     }
 
     rows = []
     for item in items:
         key = (item.get("candidate_id"), item.get("application_id"))
         candidate = candidate_by_key.get(key, {})
+        event = event_by_key.get(key)
         rows.append(
             {
                 "candidate": candidate.get("candidate_name")
@@ -744,43 +777,109 @@ def _render_schedule_suggestions(
                 "proposed_time": _format_kosovo_time(item.get("suggested_time")),
                 "duration": f"{item.get('duration_minutes')} min",
                 "panel": _format_panel_members(item),
-                "status": "Needs human confirmation",
+                "status": "Created" if event else "Needs human confirmation",
             }
         )
 
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     st.caption(
-        "Review the proposed time with the candidate and panel before creating "
-        "an event manually in Google Calendar."
+        "Confirm a proposed time to create a hold on the panel calendar. No "
+        "candidate invitation is sent automatically."
     )
 
     for item in items:
         key = (item.get("candidate_id"), item.get("application_id"))
         candidate = candidate_by_key.get(key, {})
+        event = event_by_key.get(key)
         label = candidate.get("candidate_name") or item.get("candidate_id")
+        slot_date, slot_time = _format_kosovo_slot(
+            item.get("suggested_time"),
+            item.get("duration_minutes"),
+        )
         st.divider()
         st.markdown(f"**{label}**")
-        detail_cols = st.columns([1.4, 1, 1])
-        detail_cols[0].metric(
-            "Proposed time",
-            _format_kosovo_time(item.get("suggested_time")),
+        detail_cols = st.columns([1.2, 1, 0.9])
+        detail_cols[0].metric("Date", slot_date)
+        detail_cols[1].metric("Time (Kosovo)", slot_time)
+        detail_cols[2].metric("Status", "Created" if event else "Pending")
+        st.caption(
+            f"{item.get('duration_minutes')} minutes · "
+            f"Panel: {_format_panel_members(item)}"
         )
-        detail_cols[1].metric("Duration", f"{item.get('duration_minutes')} min")
-        detail_cols[2].metric("Status", "Needs confirmation")
-        st.caption(f"Panel: {_format_panel_members(item)}")
+
+        if event:
+            st.success("Calendar event created.")
+            if event.get("html_link"):
+                st.markdown(f"[Open event in Google Calendar]({event['html_link']})")
+            continue
+
+        if not reviewer_name.strip():
+            st.caption("Enter your reviewer name in the sidebar to confirm this slot.")
+
+        action_cols = st.columns(2)
+        if action_cols[0].button(
+            "Confirm and create event",
+            key=(
+                f"confirm_schedule_{item.get('candidate_id')}_"
+                f"{item.get('application_id')}"
+            ),
+            disabled=not reviewer_name.strip(),
+            type="primary",
+            use_container_width=True,
+        ):
+            result = approve_and_create_interview_event(
+                scaffold=_scaffold_from_run_dir(run_state["run_dir"]),
+                candidate_id=str(item.get("candidate_id") or ""),
+                application_id=str(item.get("application_id") or ""),
+                approved_by=reviewer_name,
+            )
+            if result.warnings:
+                st.session_state[SCHEDULE_GENERATION_NOTICE_KEY] = {
+                    "kind": "error",
+                    "message": result.warnings[0],
+                }
+            else:
+                st.session_state[SCHEDULE_GENERATION_NOTICE_KEY] = {
+                    "kind": "success",
+                    "message": (
+                        "Calendar event created. Add a meeting link or location "
+                        "before sharing it with the candidate."
+                    ),
+                }
+            st.rerun()
+
+        with action_cols[1]:
+            _render_schedule_generation_button(
+                run_state["run_dir"],
+                label="Pick another time",
+                help_text=(
+                    "Find a different slot while preserving other candidates' "
+                    "proposals and calendar holds."
+                ),
+                candidate_id=str(item.get("candidate_id") or ""),
+                application_id=str(item.get("application_id") or ""),
+                key=(
+                    f"reschedule_{item.get('candidate_id')}_"
+                    f"{item.get('application_id')}"
+                ),
+            )
 
 
 def _render_scheduling_progress(
     *,
     approved_count: int,
     suggested_count: int,
+    created_count: int,
 ) -> None:
-    cols = st.columns(2)
+    cols = st.columns(3)
     cols[0].metric("Ready", approved_count)
     cols[1].metric("Proposed slots", suggested_count)
+    cols[2].metric("Calendar events", created_count)
 
-    if suggested_count:
-        st.info("A slot is proposed and waiting for human confirmation.")
+    if created_count:
+        st.success("A confirmed calendar hold exists for this run.")
+    elif suggested_count:
+        st.info("A slot is proposed. Confirm it to create the calendar event.")
     elif approved_count:
         st.info("Approved candidates are ready. Find available slots to continue.")
     else:
@@ -820,6 +919,12 @@ def _schedule_items(payload: Any) -> list[dict[str, Any]]:
     return [item for item in payload.get("items") or [] if isinstance(item, dict)]
 
 
+def _schedule_events(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    return [event for event in payload.get("events") or [] if isinstance(event, dict)]
+
+
 def _format_panel_members(item: dict[str, Any]) -> str:
     members = item.get("panel_members") or []
     names = [
@@ -844,16 +949,41 @@ def _format_kosovo_time(value: Any) -> str:
     return f"{date_text}, {scheduled_at:%H:%M} Kosovo time"
 
 
+def _format_kosovo_slot(value: Any, duration_minutes: Any) -> tuple[str, str]:
+    if not isinstance(value, str) or not value.strip():
+        return ("Not available", "Not available")
+    try:
+        scheduled_at = datetime.fromisoformat(value).astimezone(KOSOVO_TIMEZONE)
+        duration = int(duration_minutes)
+    except TypeError, ValueError:
+        return (value, "Not available")
+
+    date_text = scheduled_at.strftime("%a, %b %d, %Y").replace(" 0", " ")
+    end_time = scheduled_at + timedelta(minutes=duration)
+    return (date_text, f"{scheduled_at:%H:%M}–{end_time:%H:%M}")
+
+
 def _render_schedule_generation_button(
     run_dir: Path,
     *,
     label: str,
     help_text: str,
+    candidate_id: str | None = None,
+    application_id: str | None = None,
+    key: str | None = None,
 ) -> None:
-    if st.button(label, type="primary", help=help_text):
+    if st.button(
+        label,
+        type="secondary" if candidate_id else "primary",
+        help=help_text,
+        key=key,
+        use_container_width=bool(candidate_id),
+    ):
         try:
             stage = run_interview_schedule_stage(
-                scaffold=_scaffold_from_run_dir(run_dir)
+                scaffold=_scaffold_from_run_dir(run_dir),
+                reschedule_candidate_id=candidate_id,
+                reschedule_application_id=application_id,
             )
         except Exception as exc:
             st.session_state[SCHEDULE_GENERATION_NOTICE_KEY] = {
@@ -871,7 +1001,7 @@ def _render_schedule_generation_button(
         else:
             st.session_state[SCHEDULE_GENERATION_NOTICE_KEY] = {
                 "kind": "success",
-                "message": "Available slot found. Review and confirm it manually.",
+                "message": "Available slot found. Review and confirm it in the app.",
             }
         st.rerun()
 
@@ -903,6 +1033,12 @@ def _scaffold_from_run_dir(run_dir: Path) -> RunScaffold:
         logs_dir=run_dir / "logs",
         tmp_dir=run_dir / "tmp",
     )
+
+
+def _read_optional_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    return read_json_object(path)
 
 
 def _render_artifacts(run_state: dict[str, Any]) -> None:
@@ -940,7 +1076,10 @@ def _render_profile_summary(profile: dict[str, Any]) -> None:
     ]
     st.dataframe(
         pd.DataFrame(
-            [{"Field": label, "Value": value or "not available"} for label, value in contact]
+            [
+                {"Field": label, "Value": value or "not available"}
+                for label, value in contact
+            ]
         ),
         use_container_width=True,
         hide_index=True,
@@ -949,7 +1088,11 @@ def _render_profile_summary(profile: dict[str, Any]) -> None:
     skills = profile.get("skills") or []
     if skills:
         st.markdown("**Skills**")
-        st.write(", ".join(skill.get("name", "") for skill in skills[:18] if skill.get("name")))
+        st.write(
+            ", ".join(
+                skill.get("name", "") for skill in skills[:18] if skill.get("name")
+            )
+        )
 
     flags = profile.get("manual_review_flags") or []
     for flag in flags:
@@ -959,7 +1102,9 @@ def _render_profile_summary(profile: dict[str, Any]) -> None:
 def _render_match_summary(match: dict[str, Any]) -> None:
     st.markdown("#### Match")
     st.metric("Match score", match.get("score"))
-    checks = (match.get("must_have_results") or []) + (match.get("nice_to_have_results") or [])
+    checks = (match.get("must_have_results") or []) + (
+        match.get("nice_to_have_results") or []
+    )
     if checks:
         st.dataframe(
             pd.DataFrame(

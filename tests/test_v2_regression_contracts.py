@@ -33,12 +33,14 @@ REQUIRED_MVP_ARTIFACTS = (
 
 OPTIONAL_V2_ARTIFACT_KEYS = (
     "interview_schedule",
+    "interview_schedule_events",
     "fraud_findings",
     "ats_payload",
 )
 
 OPTIONAL_V2_ARTIFACT_PATHS = (
     "artifacts/interview_schedule.json",
+    "artifacts/interview_schedule_events.json",
     "artifacts/fraud_findings.json",
     "artifacts/ats_payload.json",
 )
@@ -50,6 +52,7 @@ V2_METRIC_DEFAULTS = {
     "local_llm_fallback_used": False,
     "scanned_resume_detected_count": 0,
     "interview_schedule_items_created": 0,
+    "interview_schedule_events_created": 0,
     "fraud_findings_count": 0,
     "ats_mock_records_loaded": 0,
 }
@@ -109,7 +112,7 @@ def test_optional_v2_artifacts_are_reserved_but_not_required(
 
     manifest = RunArtifactManifest.model_validate(read_json(result.artifact_manifest_path))
 
-    for key in ("fraud_findings", "ats_payload"):
+    for key in ("interview_schedule_events", "fraud_findings", "ats_payload"):
         artifact = manifest.artifacts[key]
         assert artifact.required_for_mvp is False
         assert artifact.status == ArtifactStatus.RESERVED
@@ -121,6 +124,7 @@ def test_optional_v2_artifacts_are_reserved_but_not_required(
 
     for relative_path in (
         "artifacts/fraud_findings.json",
+        "artifacts/interview_schedule_events.json",
         "artifacts/ats_payload.json",
     ):
         assert not (result.run_dir / relative_path).exists(), relative_path
