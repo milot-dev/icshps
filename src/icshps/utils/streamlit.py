@@ -9,6 +9,7 @@ from typing import Any, Literal
 import pandas as pd
 import streamlit as st
 
+from icshps.schemas import RoutingCategory
 from icshps.services.artifact_catalog import ArtifactCatalogItem
 from icshps.services.reviewer_approvals import (
     ReviewerApproval,
@@ -90,6 +91,10 @@ def build_candidate_review_rows(
 
 
 def build_calendar_queue_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    eligible_categories = {
+        RoutingCategory.FAST_TRACK_REVIEW.value,
+        RoutingCategory.ADVANCE_TO_INTERVIEW_REVIEW.value,
+    }
     return [
         {
             "candidate_name": row["candidate_name"],
@@ -103,6 +108,7 @@ def build_calendar_queue_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]
         }
         for row in rows
         if row["approval_action"] == "approve_for_scheduling"
+        and row["routing_category"] in eligible_categories
     ]
 
 

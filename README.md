@@ -233,11 +233,14 @@ The scheduler uses Google Calendar FreeBusy availability lookup to write
 `artifacts/interview_schedule.json` after final routing, but only creates
 schedule suggestions for candidates a reviewer has approved for scheduling in
 the Streamlit app. Schedule suggestions keep `requires_human_confirmation=true`.
-The Calendar Queue displays those proposals in Kosovo time for a reviewer to
-confirm manually. This feature does not create calendar events, add attendees,
-or send candidate invitations. Missing reviewer approval, Calendar credentials,
-availability access, or panel config produces controlled warnings instead of
-failing the pipeline.
+The Calendar Queue displays proposals in Kosovo time and provides **Confirm and
+create event** and **Pick another time** actions. Confirmation creates a hold on
+the configured panel calendar and records it in
+`artifacts/interview_schedule_events.json`. The service account therefore needs
+event write access to that calendar. Holds use `sendUpdates=none`, contain no
+attendees, and do not email candidates or panel members. Missing approval,
+credentials, availability/write access, or panel configuration produces a
+controlled warning instead of failing the pipeline.
 
 Enable scanned-PDF vision OCR separately:
 

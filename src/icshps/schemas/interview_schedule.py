@@ -57,3 +57,30 @@ class InterviewScheduleArtifact(ICSHPSBaseModel):
     items: list[InterviewScheduleItem] = Field(default_factory=list)
     warnings: list[InterviewScheduleWarning] = Field(default_factory=list)
     requires_human_confirmation: Literal[True] = True
+
+
+class InterviewScheduleEventRecord(ICSHPSBaseModel):
+    """Google Calendar event created after a reviewer confirms a suggestion."""
+
+    candidate_id: str
+    application_id: str
+    calendar_id: str
+    event_id: str
+    title: str
+    start: datetime
+    end: datetime
+    duration_minutes: int = Field(gt=0)
+    approved_by: str
+    created_at: datetime
+    html_link: str | None = None
+    panel_members: list[PanelMember] = Field(default_factory=list)
+    status: Literal["created"] = "created"
+
+
+class InterviewScheduleEventsArtifact(ICSHPSBaseModel):
+    """Calendar holds created from confirmed interview suggestions."""
+
+    run_id: str
+    calendar_source: Literal["google_calendar"] = "google_calendar"
+    events: list[InterviewScheduleEventRecord] = Field(default_factory=list)
+    warnings: list[InterviewScheduleWarning] = Field(default_factory=list)

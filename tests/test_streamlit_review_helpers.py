@@ -8,6 +8,7 @@ from icshps.services.reviewer_approvals import ReviewerApproval
 from icshps.utils import streamlit as streamlit_utils
 from streamlit_app import (
     _calendar_queue_display_rows,
+    _format_kosovo_slot,
     _format_kosovo_time,
     _format_panel_members,
     _schedule_items,
@@ -18,6 +19,13 @@ def test_format_kosovo_time_is_human_readable() -> None:
     assert (
         _format_kosovo_time("2026-06-29T10:00:00+02:00")
         == "Mon, Jun 29, 2026, 10:00 Kosovo time"
+    )
+
+
+def test_format_kosovo_slot_separates_date_and_time_range() -> None:
+    assert _format_kosovo_slot("2026-07-02T10:00:00+02:00", 45) == (
+        "Thu, Jul 2, 2026",
+        "10:00–10:45",
     )
 
 
@@ -178,6 +186,16 @@ def test_approved_candidates_appear_in_calendar_queue() -> None:
                 "score": 70.0,
                 "reviewer_name": "Ada",
                 "updated_at": "2026-06-24T11:00:00Z",
+            },
+            {
+                "candidate_name": "Rejected Candidate",
+                "candidate_id": "candidate_003",
+                "application_id": "app_003",
+                "approval_action": "approve_for_scheduling",
+                "routing_category": "Recommended rejection — human approval required",
+                "score": 69.0,
+                "reviewer_name": "Ada",
+                "updated_at": "2026-06-24T12:00:00Z",
             },
         ]
     )

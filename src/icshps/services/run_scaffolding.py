@@ -23,6 +23,7 @@ V2_METRIC_DEFAULTS: dict[str, Any] = {
     "local_llm_fallback_used": False,
     "scanned_resume_detected_count": 0,
     "interview_schedule_items_created": 0,
+    "interview_schedule_events_created": 0,
     "fraud_findings_count": 0,
     "ats_mock_records_loaded": 0,
 }
@@ -238,6 +239,15 @@ def build_artifact_manifest(scaffold: RunScaffold) -> RunArtifactManifest:
                 description=(
                     "Optional v2 mock interview schedule suggestions requiring "
                     "human confirmation."
+                ),
+                required_for_mvp=False,
+            ),
+            "interview_schedule_events": ArtifactRef(
+                path=Path("artifacts/interview_schedule_events.json"),
+                owner="Member 2",
+                description=(
+                    "Google Calendar holds created after reviewer confirmation of "
+                    "interview suggestions."
                 ),
                 required_for_mvp=False,
             ),

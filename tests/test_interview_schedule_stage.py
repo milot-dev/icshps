@@ -20,8 +20,11 @@ from icshps.schemas import (
     Finding,
     FindingCategory,
     InterviewScheduleArtifact,
+    InterviewScheduleEventRecord,
+    InterviewScheduleEventsArtifact,
     JobInfo,
     OptionalInputPaths,
+    PanelMember,
     RequiredInputPaths,
     RoutingCategory,
     RunArtifactManifest,
@@ -34,6 +37,7 @@ from icshps.services import (
     upsert_reviewer_approval,
     write_json_artifact,
 )
+from icshps.utils.file_io import write_json
 
 
 class FakeFreeBusyProvider:
@@ -88,7 +92,10 @@ def test_advance_candidate_gets_schedule_suggestion(tmp_path, monkeypatch) -> No
 
     artifact = read_schedule(scaffold)
     assert len(artifact.items) == 1
-    assert artifact.items[0].routing_category == RoutingCategory.ADVANCE_TO_INTERVIEW_REVIEW
+    assert (
+        artifact.items[0].routing_category
+        == RoutingCategory.ADVANCE_TO_INTERVIEW_REVIEW
+    )
 
 
 def test_candidate_requires_app_approval_before_schedule_lookup(
@@ -103,7 +110,9 @@ def test_candidate_requires_app_approval_before_schedule_lookup(
 
     run_interview_schedule_stage(
         scaffold=scaffold,
-        final_decision=final_decision_for(scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW),
+        final_decision=final_decision_for(
+            scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW
+        ),
         provider=provider,
         now=fixed_now(),
     )
@@ -125,7 +134,9 @@ def test_held_candidate_is_not_scheduled(tmp_path, monkeypatch) -> None:
 
     run_interview_schedule_stage(
         scaffold=scaffold,
-        final_decision=final_decision_for(scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW),
+        final_decision=final_decision_for(
+            scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW
+        ),
         provider=provider,
         now=fixed_now(),
     )
@@ -146,7 +157,9 @@ def test_rejected_candidate_is_not_scheduled(tmp_path, monkeypatch) -> None:
 
     run_interview_schedule_stage(
         scaffold=scaffold,
-        final_decision=final_decision_for(scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW),
+        final_decision=final_decision_for(
+            scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW
+        ),
         provider=provider,
         now=fixed_now(),
     )
@@ -169,7 +182,9 @@ def test_malformed_approval_artifact_skips_scheduling(tmp_path, monkeypatch) -> 
 
     run_interview_schedule_stage(
         scaffold=scaffold,
-        final_decision=final_decision_for(scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW),
+        final_decision=final_decision_for(
+            scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW
+        ),
         provider=provider,
         now=fixed_now(),
     )
@@ -217,7 +232,9 @@ def test_candidates_with_review_issues_are_skipped(tmp_path, monkeypatch) -> Non
     }
 
 
-def test_candidate_profile_manual_review_flags_are_skipped(tmp_path, monkeypatch) -> None:
+def test_candidate_profile_manual_review_flags_are_skipped(
+    tmp_path, monkeypatch
+) -> None:
     scaffold = scaffold_with_context(tmp_path)
     configure_panel(monkeypatch)
     profile = CandidateProfile(
@@ -237,7 +254,9 @@ def test_candidate_profile_manual_review_flags_are_skipped(tmp_path, monkeypatch
 
     run_interview_schedule_stage(
         scaffold=scaffold,
-        final_decision=final_decision_for(scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW),
+        final_decision=final_decision_for(
+            scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW
+        ),
         provider=FakeFreeBusyProvider(),
         now=fixed_now(),
     )
@@ -249,7 +268,9 @@ def test_candidate_profile_manual_review_flags_are_skipped(tmp_path, monkeypatch
     }
 
 
-def test_missing_credentials_writes_warning_without_crashing(tmp_path, monkeypatch) -> None:
+def test_missing_credentials_writes_warning_without_crashing(
+    tmp_path, monkeypatch
+) -> None:
     scaffold = scaffold_with_context(tmp_path)
     configure_panel(monkeypatch)
     approve_for_scheduling(scaffold)
@@ -258,7 +279,9 @@ def test_missing_credentials_writes_warning_without_crashing(tmp_path, monkeypat
 
     run_interview_schedule_stage(
         scaffold=scaffold,
-        final_decision=final_decision_for(scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW),
+        final_decision=final_decision_for(
+            scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW
+        ),
         now=fixed_now(),
     )
 
@@ -269,14 +292,18 @@ def test_missing_credentials_writes_warning_without_crashing(tmp_path, monkeypat
     }
 
 
-def test_missing_panel_config_writes_warning_without_crashing(tmp_path, monkeypatch) -> None:
+def test_missing_panel_config_writes_warning_without_crashing(
+    tmp_path, monkeypatch
+) -> None:
     scaffold = scaffold_with_context(tmp_path)
     approve_for_scheduling(scaffold)
     monkeypatch.delenv("ICSHPS_INTERVIEW_PANEL_MEMBERS_JSON", raising=False)
 
     run_interview_schedule_stage(
         scaffold=scaffold,
-        final_decision=final_decision_for(scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW),
+        final_decision=final_decision_for(
+            scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW
+        ),
         provider=FakeFreeBusyProvider(),
         now=fixed_now(),
     )
@@ -303,7 +330,9 @@ def test_no_valid_slots_writes_warning(tmp_path, monkeypatch) -> None:
 
     run_interview_schedule_stage(
         scaffold=scaffold,
-        final_decision=final_decision_for(scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW),
+        final_decision=final_decision_for(
+            scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW
+        ),
         provider=FakeFreeBusyProvider(busy_by_calendar),
         now=fixed_now(),
     )
@@ -340,13 +369,17 @@ def test_schedule_stage_updates_metrics_manifest_and_audit_log(
 
     run_interview_schedule_stage(
         scaffold=scaffold,
-        final_decision=final_decision_for(scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW),
+        final_decision=final_decision_for(
+            scaffold.run_id, RoutingCategory.FAST_TRACK_REVIEW
+        ),
         provider=FakeFreeBusyProvider(),
         now=fixed_now(),
     )
 
     metrics = read_json(scaffold.artifacts_dir / "metrics.json")
-    manifest = RunArtifactManifest.model_validate(read_json(scaffold.artifact_manifest_path))
+    manifest = RunArtifactManifest.model_validate(
+        read_json(scaffold.artifact_manifest_path)
+    )
     audit_log = (scaffold.artifacts_dir / "audit_log.md").read_text(encoding="utf-8")
 
     assert metrics["interview_schedule_items_created"] == 1
@@ -385,6 +418,109 @@ def test_schedule_stage_replaces_existing_audit_log_section(
     assert audit_log.count("## Interview Schedule Suggestions") == 1
     assert "Status: `generated`" in audit_log
     assert "INTERVIEW_REVIEWER_APPROVAL_REQUIRED" not in audit_log
+
+
+def test_two_approved_candidates_receive_non_overlapping_slots(
+    tmp_path, monkeypatch
+) -> None:
+    scaffold = scaffold_with_context(tmp_path)
+    configure_panel(monkeypatch)
+    approve_candidate(scaffold, "candidate_001", "app_001")
+    approve_candidate(scaffold, "candidate_002", "app_002")
+
+    run_interview_schedule_stage(
+        scaffold=scaffold,
+        final_decision=final_decision_for_candidates(scaffold.run_id),
+        provider=FakeFreeBusyProvider(),
+        now=fixed_now(),
+    )
+
+    items = read_schedule(scaffold).items
+    assert [item.suggested_time.isoformat() for item in items] == [
+        "2026-07-01T10:00:00+02:00",
+        "2026-07-01T10:45:00+02:00",
+    ]
+
+
+def test_pick_another_time_skips_other_candidate_proposal(
+    tmp_path, monkeypatch
+) -> None:
+    scaffold = scaffold_with_context(tmp_path)
+    configure_panel(monkeypatch)
+    approve_candidate(scaffold, "candidate_001", "app_001")
+    approve_candidate(scaffold, "candidate_002", "app_002")
+    decision = final_decision_for_candidates(scaffold.run_id)
+    run_interview_schedule_stage(
+        scaffold=scaffold,
+        final_decision=decision,
+        provider=FakeFreeBusyProvider(),
+        now=fixed_now(),
+    )
+
+    run_interview_schedule_stage(
+        scaffold=scaffold,
+        final_decision=decision,
+        provider=FakeFreeBusyProvider(),
+        now=fixed_now(),
+        reschedule_candidate_id="candidate_001",
+        reschedule_application_id="app_001",
+    )
+
+    items = {
+        (item.candidate_id, item.application_id): item
+        for item in read_schedule(scaffold).items
+    }
+    assert items[("candidate_002", "app_002")].suggested_time.isoformat() == (
+        "2026-07-01T10:45:00+02:00"
+    )
+    assert items[("candidate_001", "app_001")].suggested_time.isoformat() == (
+        "2026-07-01T11:30:00+02:00"
+    )
+
+
+def test_created_hold_in_another_run_is_reserved_for_later_candidate(
+    tmp_path, monkeypatch
+) -> None:
+    scaffold = scaffold_with_context(tmp_path)
+    configure_panel(monkeypatch)
+    approve_candidate(scaffold, "candidate_002", "app_002")
+    start = datetime(2026, 7, 1, 10, 0, tzinfo=ZoneInfo("Europe/Belgrade"))
+    other_artifacts = scaffold.run_dir.parent / "other_run" / "artifacts"
+    other_artifacts.mkdir(parents=True)
+    write_json(
+        other_artifacts / "interview_schedule_events.json",
+        InterviewScheduleEventsArtifact(
+            run_id=scaffold.run_id,
+            events=[
+                InterviewScheduleEventRecord(
+                    candidate_id="candidate_001",
+                    application_id="app_001",
+                    calendar_id="panel@example.com",
+                    event_id="event_001",
+                    title="Interview: First Candidate",
+                    start=start,
+                    end=start.replace(minute=45),
+                    duration_minutes=45,
+                    approved_by="Ada",
+                    created_at=start,
+                    panel_members=[panel_member()],
+                )
+            ],
+        ),
+    )
+
+    run_interview_schedule_stage(
+        scaffold=scaffold,
+        final_decision=final_decision_for_candidates(
+            scaffold.run_id, candidate_ids=(("candidate_002", "app_002"),)
+        ),
+        provider=FakeFreeBusyProvider(),
+        now=fixed_now(),
+    )
+
+    assert read_schedule(scaffold).items[0].suggested_time.isoformat() == (
+        "2026-07-01T10:45:00+02:00"
+    )
 
 
 def scaffold_with_context(tmp_path: Path):
@@ -456,6 +592,33 @@ def final_decision_for(
     )
 
 
+def final_decision_for_candidates(
+    run_id: str,
+    candidate_ids=(
+        ("candidate_001", "app_001"),
+        ("candidate_002", "app_002"),
+    ),
+) -> FinalDecisionArtifact:
+    return FinalDecisionArtifact(
+        run_id=run_id,
+        bundle_id="bundle_001",
+        scenario_type="clean_standard",
+        decisions=[
+            {
+                "candidate_id": candidate_id,
+                "application_id": application_id,
+                "routing_category": RoutingCategory.FAST_TRACK_REVIEW,
+                "reason": "Human approval is required.",
+                "score": 92.0,
+                "blocking_finding_ids": [],
+                "requires_human_approval": True,
+            }
+            for candidate_id, application_id in candidate_ids
+        ],
+        findings=[],
+    )
+
+
 def fixed_now() -> datetime:
     return datetime(2026, 6, 30, 12, 0, tzinfo=ZoneInfo("Europe/Belgrade"))
 
@@ -476,14 +639,31 @@ def configure_panel(monkeypatch) -> None:
 
 
 def approve_for_scheduling(scaffold, action="approve_for_scheduling") -> None:
+    approve_candidate(scaffold, "candidate_001", "app_001", action=action)
+
+
+def approve_candidate(
+    scaffold,
+    candidate_id: str,
+    application_id: str,
+    action="approve_for_scheduling",
+) -> None:
     upsert_reviewer_approval(
         run_dir=scaffold.run_dir,
-        candidate_id="candidate_001",
-        application_id="app_001",
+        candidate_id=candidate_id,
+        application_id=application_id,
         action=action,
         reviewer_name="Ada",
         source_routing_category="Fast-track review",
         score=92.0,
+    )
+
+
+def panel_member() -> PanelMember:
+    return PanelMember(
+        name="Panel",
+        email="panel@example.com",
+        calendar_id="panel@example.com",
     )
 
 
