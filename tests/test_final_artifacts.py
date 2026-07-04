@@ -370,7 +370,14 @@ def test_artifact_manifest_marks_final_artifacts_created(tmp_path: Path) -> None
         read_json(scaffold.artifact_manifest_path)
     )
 
-    for key in ("final_decision", "shortlist", "hiring_packet", "metrics", "audit_log"):
+    for key in (
+        "final_decision",
+        "shortlist",
+        "hiring_packet",
+        "ats_payload",
+        "metrics",
+        "audit_log",
+    ):
         assert manifest.artifacts[key].status == ArtifactStatus.CREATED
 
 
@@ -513,6 +520,7 @@ def artifact_snapshot(artifacts_dir: Path) -> dict[str, str]:
         "final_decision.json",
         "shortlist.csv",
         "hiring_packet.json",
+        "ats_payload.json",
         "metrics.json",
         "audit_log.md",
     )

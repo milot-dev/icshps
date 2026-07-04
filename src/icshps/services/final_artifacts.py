@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from icshps.agents.ats_mock import build_ats_payload
 from icshps.schemas import (
     BundleContext,
     CandidateProfile,
@@ -27,6 +28,7 @@ FINAL_ARTIFACT_KEYS: tuple[str, ...] = (
     "final_decision",
     "shortlist",
     "hiring_packet",
+    "ats_payload",
     "metrics",
     "audit_log",
 )
@@ -99,6 +101,11 @@ def write_final_run_artifacts(
             candidate_profile=candidate_profile,
             candidate_profiles=resolved_candidate_profiles,
             match_results=match_results,
+        ),
+        write_ats_payload(
+            scaffold=scaffold,
+            final_decision=final_decision,
+            context=context,
         ),
         write_metrics(
             scaffold=scaffold,
@@ -216,6 +223,28 @@ def write_hiring_packet(
     )
 
 
+def write_ats_payload(
+    *,
+    scaffold: RunScaffold,
+    final_decision: FinalDecisionArtifact,
+    context: BundleContext | None = None,
+) -> Path:
+    """Write a local-only dry-run ATS payload artifact."""
+
+    return write_json_artifact(
+        scaffold=scaffold,
+        artifact_key="ats_payload",
+        payload=build_ats_payload(
+            final_decision=final_decision,
+            ats_export_path=context.optional_inputs.ats_export if context else None,
+            ats_requisition_path=(
+                context.optional_inputs.ats_requisition if context else None
+            ),
+        ),
+        mark_created=False,
+    )
+
+
 def write_metrics(
     *,
     scaffold: RunScaffold,
@@ -248,8 +277,13 @@ def write_metrics(
     )
     anomaly_count = _candidate_count_with_category(
         final_decision=final_decision,
-        categories={"anomaly", "linkedin_consistency"},
+        categories={"anomaly", "linkedin_consistency", "fraud"},
     )
+    fraud_finding_count = _finding_count_with_category(
+        final_decision=final_decision,
+        categories={"fraud"},
+    )
+    ats_mock_records_loaded = _ats_payload_record_count(scaffold)
     manual_review_count = len(manual_review_decisions)
 
     payload: dict[str, Any] = {
@@ -289,6 +323,14 @@ def write_metrics(
             numerator=anomaly_count,
             denominator=total_candidates,
         ),
+        "fraud_findings_count": max(
+            int(existing_metrics.get("fraud_findings_count", 0) or 0),
+            fraud_finding_count,
+        ),
+        "ats_mock_records_loaded": max(
+            int(existing_metrics.get("ats_mock_records_loaded", 0) or 0),
+            ats_mock_records_loaded,
+        ),
         "manual_review_rate_percent": _percentage(
             numerator=manual_review_count,
             denominator=total_candidates,
@@ -303,6 +345,7 @@ def write_metrics(
                 "artifacts/final_decision.json",
                 "artifacts/shortlist.csv",
                 "artifacts/hiring_packet.json",
+                "artifacts/ats_payload.json",
                 "artifacts/metrics.json",
                 "artifacts/audit_log.md",
             }
@@ -540,6 +583,7 @@ def _build_audit_log_markdown(
         "- `artifacts/final_decision.json`\n"
         "- `artifacts/shortlist.csv`\n"
         "- `artifacts/hiring_packet.json`\n"
+        "- `artifacts/ats_payload.json`\n"
         "- `artifacts/metrics.json`\n"
         "- `artifacts/audit_log.md`\n\n"
         "## Candidate Routing Summary\n\n"
@@ -646,3 +690,23 @@ def _candidate_count_with_category(
             candidate_ids.add(finding.candidate_id)
 
     return len(candidate_ids)
+
+
+def _finding_count_with_category(
+    *,
+    final_decision: FinalDecisionArtifact,
+    categories: set[str],
+) -> int:
+    return sum(
+        1
+        for finding in final_decision.findings
+        if finding.category.value in categories
+    )
+
+
+def _ats_payload_record_count(scaffold: RunScaffold) -> int:
+    payload = read_json_artifact(scaffold=scaffold, artifact_key="ats_payload") or {}
+    if not payload.get("export_enabled", False):
+        return 0
+    records = payload.get("records", [])
+    return len(records) if isinstance(records, list) else 0

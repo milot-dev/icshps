@@ -16,7 +16,7 @@ REQUIRED_FIXTURE_FILES = (
     "mock_data/hris_master.yaml",
 )
 
-FUTURE_MOCK_FILES = (
+STRETCH_MOCK_FILES = (
     "mock_data/panel_availability.yaml",
     "mock_data/ats_export.json",
     "mock_data/ats_requisition.json",
@@ -29,7 +29,7 @@ REQUIRED_OUTPUTS = (
     "artifacts/audit_log.md",
 )
 
-UNIMPLEMENTED_V2_ARTIFACTS = (
+GENERATED_STRETCH_ARTIFACTS = (
     "artifacts/fraud_findings.json",
     "artifacts/ats_payload.json",
 )
@@ -68,10 +68,10 @@ def test_v2_demo_fixture_runs_through_langgraph_workflow(tmp_path: Path) -> None
         assert (result.run_dir / relative_path).exists(), relative_path
 
 
-def test_v2_demo_fixture_future_mock_files_do_not_create_fake_artifacts(
+def test_v2_demo_fixture_generates_local_ats_and_fraud_artifacts(
     tmp_path: Path,
 ) -> None:
-    for relative_path in FUTURE_MOCK_FILES:
+    for relative_path in STRETCH_MOCK_FILES:
         assert (V2_DEMO_BUNDLE / relative_path).exists(), relative_path
 
     result = run_langgraph_workflow(
@@ -90,5 +90,5 @@ def test_v2_demo_fixture_future_mock_files_do_not_create_fake_artifacts(
     assert schedule.items == []
     assert schedule.warnings
 
-    for relative_path in UNIMPLEMENTED_V2_ARTIFACTS:
-        assert not (result.run_dir / relative_path).exists(), relative_path
+    for relative_path in GENERATED_STRETCH_ARTIFACTS:
+        assert (result.run_dir / relative_path).exists(), relative_path

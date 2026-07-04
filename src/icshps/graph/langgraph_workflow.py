@@ -42,6 +42,7 @@ DOWNSTREAM_ARTIFACT_STAGES: tuple[str, ...] = (
     "compliance_flags",
     "verification_findings",
     "anomaly_findings",
+    "fraud_findings",
 )
 
 
@@ -241,14 +242,20 @@ def compliance_node(state: WorkflowState) -> WorkflowState:
 
 
 def anomaly_detection_node(state: WorkflowState) -> WorkflowState:
+    scaffold = _required(state, "scaffold")
     stage = run_anomaly_stage(
-        scaffold=_required(state, "scaffold"),
+        scaffold=scaffold,
         context=_required(state, "context"),
         candidate_profiles=state.get("candidate_profiles", ()),
     )
 
     return {
         "anomaly_findings_path": stage.path,
+        "fraud_findings_path": (
+            scaffold.artifacts_dir / "fraud_findings.json"
+            if "fraud_findings" in stage.created_artifacts
+            else None
+        ),
         "skipped_stages": _append_values(
             state,
             "skipped_stages",
@@ -394,6 +401,7 @@ def _result_from_state(state: WorkflowState) -> EndToEndWorkflowResult:
         compliance_flags_path=state.get("compliance_flags_path"),
         verification_findings_path=state.get("verification_findings_path"),
         anomaly_findings_path=state.get("anomaly_findings_path"),
+        fraud_findings_path=state.get("fraud_findings_path"),
         interview_schedule_path=state.get("interview_schedule_path"),
         final_decision=state.get("final_decision"),
         artifact_manifest_path=state.get("artifact_manifest_path"),
@@ -440,6 +448,7 @@ def _failed_result_from_state(
         compliance_flags_path=None,
         verification_findings_path=None,
         anomaly_findings_path=None,
+        fraud_findings_path=None,
         interview_schedule_path=None,
         final_decision=None,
         artifact_manifest_path=None,

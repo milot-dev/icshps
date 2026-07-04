@@ -19,6 +19,7 @@ from icshps.utils.file_io import read_json_object, read_yaml_object
 
 AGENT_NAME = "surge_mode_detection_v1"
 ANOMALY_AGENT_NAME = "anomaly_detection_agent_v1"
+FRAUD_AGENT_NAME = "fraud_anomaly_agent_v1"
 
 
 def build_anomaly_findings(
@@ -51,6 +52,25 @@ def build_anomaly_findings(
         ).findings
     )
 
+    return FindingsArtifact(run_id=run_id, findings=findings)
+
+
+def build_fraud_findings(
+    *,
+    run_id: str,
+    candidate_profiles: list[CandidateProfile],
+    fraud_signals_path: Path | None = None,
+) -> FindingsArtifact:
+    """Detect local mock fraud signals and identity-collision risk."""
+
+    findings: list[Finding] = []
+    findings.extend(_identity_collision_findings(candidate_profiles))
+    findings.extend(
+        _mock_fraud_signal_findings(
+            fraud_signals_path=fraud_signals_path,
+            starting_index=len(findings) + 1,
+        )
+    )
     return FindingsArtifact(run_id=run_id, findings=findings)
 
 
@@ -124,6 +144,126 @@ def _load_application_volume_metadata(path: Path) -> dict[str, Any]:
         return {}
 
     return {}
+
+
+def _load_mapping(path: Path) -> dict[str, Any]:
+    if path.suffix.lower() == ".json":
+        return read_json_object(path)
+    return read_yaml_object(path)
+
+
+def _identity_collision_findings(
+    candidate_profiles: list[CandidateProfile],
+) -> list[Finding]:
+    findings: list[Finding] = []
+
+    for field_name, getter in (
+        ("email", lambda profile: profile.email.value if profile.email else None),
+        ("phone", lambda profile: profile.phone.value if profile.phone else None),
+    ):
+        profiles_by_value: dict[str, list[CandidateProfile]] = {}
+        for profile in candidate_profiles:
+            value = getter(profile)
+            if value:
+                profiles_by_value.setdefault(value.strip().lower(), []).append(profile)
+
+        for _, profiles in sorted(profiles_by_value.items()):
+            candidate_ids = {profile.candidate_id for profile in profiles}
+            if len(candidate_ids) < 2:
+                continue
+
+            first = sorted(
+                profiles,
+                key=lambda item: (item.candidate_id, item.application_id),
+            )[0]
+            findings.append(
+                Finding(
+                    id=f"fraud-identity-collision-{field_name}-{len(findings) + 1:03d}",
+                    source_agent=FRAUD_AGENT_NAME,
+                    category=FindingCategory.FRAUD,
+                    severity=Severity.WARNING,
+                    title="Possible candidate identity collision",
+                    description=(
+                        f"Multiple candidate IDs share the same {field_name} value."
+                    ),
+                    reason=(
+                        "Shared contact details across candidate IDs can indicate "
+                        "duplicate, proxy, or synthetic application risk."
+                    ),
+                    candidate_id=first.candidate_id,
+                    application_id=first.application_id,
+                    confidence=0.85,
+                    evidence=[
+                        ref for profile in profiles for ref in profile.evidence_index
+                    ],
+                    recommendation="Route to manual fraud review before downstream action.",
+                    requires_human_review=True,
+                )
+            )
+
+    return findings
+
+
+def _mock_fraud_signal_findings(
+    *,
+    fraud_signals_path: Path | None,
+    starting_index: int,
+) -> list[Finding]:
+    if (
+        fraud_signals_path is None
+        or not fraud_signals_path.exists()
+        or fraud_signals_path.stat().st_size == 0
+    ):
+        return []
+
+    payload = _load_mapping(fraud_signals_path)
+    raw_signals = payload.get("fraud_signals") or payload.get("signals") or []
+    if not isinstance(raw_signals, list):
+        return []
+
+    findings: list[Finding] = []
+    for item in raw_signals:
+        if not isinstance(item, dict):
+            continue
+
+        signal_type = str(
+            item.get("type") or item.get("signal") or "mock_fraud_signal"
+        ).strip()
+        description = str(
+            item.get("description")
+            or item.get("reason")
+            or "Mock fraud signal requires human review."
+        )
+        severity = Severity(str(item.get("severity", Severity.WARNING.value)))
+        confidence = max(0.0, min(float(item.get("confidence", 0.8) or 0.0), 1.0))
+
+        findings.append(
+            Finding(
+                id=f"fraud-mock-signal-{starting_index + len(findings):03d}",
+                source_agent=FRAUD_AGENT_NAME,
+                category=FindingCategory.FRAUD,
+                severity=severity,
+                title=str(item.get("title") or _title_from_signal_type(signal_type)),
+                description=description,
+                reason=description,
+                candidate_id=_optional_string(item.get("candidate_id")),
+                application_id=_optional_string(item.get("application_id")),
+                confidence=confidence,
+                evidence=[
+                    EvidenceRef(
+                        source_path=fraud_signals_path,
+                        source_type="mock_fraud_signals",
+                        section=signal_type,
+                        text_snippet=description,
+                        confidence=confidence,
+                    )
+                ],
+                recommendation="Route to manual fraud review before downstream action.",
+                requires_human_review=True,
+            )
+        )
+
+    return findings
 
 
 def _duplicate_candidate_findings(
@@ -335,3 +475,12 @@ def _build_evidence_snippet(
         )
 
     return "; ".join(snippet_parts)
+
+
+def _title_from_signal_type(signal_type: str) -> str:
+    return signal_type.replace("_", " ").replace("-", " ").strip().title()
+
+
+def _optional_string(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None

@@ -69,6 +69,7 @@ def build_final_decision_from_run(
     intake_findings = _read_optional_findings(scaffold, "intake_findings")
     verification_findings = _read_optional_findings(scaffold, "verification_findings")
     anomaly_findings = _read_optional_findings(scaffold, "anomaly_findings")
+    fraud_findings = _read_optional_findings(scaffold, "fraud_findings")
     compliance_findings = build_eeo_compliance_findings(
         run_id=scaffold.run_id,
         job_description_path=context.required_inputs.job_description,
@@ -84,6 +85,7 @@ def build_final_decision_from_run(
         intake_findings=intake_findings,
         verification_findings=verification_findings,
         anomaly_findings=anomaly_findings,
+        fraud_findings=fraud_findings,
         compliance_findings=compliance_findings,
     )
 
@@ -97,6 +99,7 @@ def build_final_decision_artifact(
     intake_findings: FindingsArtifact | None = None,
     verification_findings: FindingsArtifact | None = None,
     anomaly_findings: FindingsArtifact | None = None,
+    fraud_findings: FindingsArtifact | None = None,
     compliance_findings: FindingsArtifact | None = None,
 ) -> FinalDecisionArtifact:
     """
@@ -112,6 +115,7 @@ def build_final_decision_artifact(
         intake_findings=intake_findings,
         verification_findings=verification_findings,
         anomaly_findings=anomaly_findings,
+        fraud_findings=fraud_findings,
         compliance_findings=compliance_findings,
     )
     unified_findings = prioritize_findings(deduplicate_findings(findings))
@@ -141,6 +145,7 @@ def collect_findings(
     intake_findings: FindingsArtifact | None = None,
     verification_findings: FindingsArtifact | None = None,
     anomaly_findings: FindingsArtifact | None = None,
+    fraud_findings: FindingsArtifact | None = None,
     compliance_findings: FindingsArtifact | None = None,
 ) -> list[Finding]:
     """
@@ -156,6 +161,7 @@ def collect_findings(
         intake_findings,
         verification_findings,
         anomaly_findings,
+        fraud_findings,
         compliance_findings,
     ):
         if artifact is not None:
@@ -619,6 +625,8 @@ def _is_eeo_routing_signal(finding: Finding) -> bool:
 
 
 def _is_duplicate_or_multi_role_finding(finding: Finding) -> bool:
+    if finding.category == FindingCategory.FRAUD:
+        return False
     text = _finding_text(finding)
     return "duplicate" in text or "multi role" in text or "multi-role" in text
 
@@ -654,6 +662,8 @@ def _is_manual_review_finding(finding: Finding) -> bool:
     text = _finding_text(finding)
     if not finding.requires_human_review:
         return False
+    if finding.category == FindingCategory.FRAUD:
+        return True
 
     return any(
         token in text
