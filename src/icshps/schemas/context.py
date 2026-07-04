@@ -62,6 +62,9 @@ class OptionalInputPaths(ICSHPSBaseModel):
     application_history: Path | None = None
     credential_evidence: Path | None = None
     application_volume: Path | None = None
+    ats_export: Path | None = None
+    ats_requisition: Path | None = None
+    fraud_signals: Path | None = None
 
 
 class BundleContext(ICSHPSBaseModel):

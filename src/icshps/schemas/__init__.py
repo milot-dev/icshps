@@ -7,6 +7,7 @@ from icshps.schemas.common import (
     RoutingCategory,
     Severity,
 )
+from icshps.schemas.ats import AtsPayload, AtsPayloadRecord
 from icshps.schemas.context import (
     BundleContext,
     BundleInfo,
@@ -60,6 +61,8 @@ __all__ = [
     "Severity",
     "FindingCategory",
     "RoutingCategory",
+    "AtsPayload",
+    "AtsPayloadRecord",
     "BundleContext",
     "BundleInfo",
     "ScenarioInfo",

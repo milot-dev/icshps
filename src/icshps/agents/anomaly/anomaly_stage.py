@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from icshps.agents.anomaly.anomaly_detection_agent import build_anomaly_findings
+from icshps.agents.anomaly.anomaly_detection_agent import (
+    build_anomaly_findings,
+    build_fraud_findings,
+)
 from icshps.schemas import BundleContext, CandidateProfile
 from icshps.services import (
     AgentStageResult,
@@ -32,12 +35,17 @@ def run_anomaly_stage(
             application_history_path=context.optional_inputs.application_history,
             application_volume_path=context.optional_inputs.application_volume,
         )
+        fraud_artifact = build_fraud_findings(
+            run_id=scaffold.run_id,
+            candidate_profiles=profiles,
+            fraud_signals_path=context.optional_inputs.fraud_signals,
+        )
 
     except Exception as exc:
         return AgentStageResult(
             path=None,
             created_artifacts=(),
-            skipped_stages=("anomaly_findings",),
+            skipped_stages=("anomaly_findings", "fraud_findings"),
             warnings=(f"Anomaly stage skipped after controlled anomaly error: {exc}",),
         )
 
@@ -46,10 +54,15 @@ def run_anomaly_stage(
         artifact_key="anomaly_findings",
         payload=artifact,
     )
+    write_json_artifact(
+        scaffold=scaffold,
+        artifact_key="fraud_findings",
+        payload=fraud_artifact,
+    )
 
     return AgentStageResult(
         path=artifact_path,
-        created_artifacts=("anomaly_findings",),
+        created_artifacts=("anomaly_findings", "fraud_findings"),
         skipped_stages=(),
         warnings=(),
     )

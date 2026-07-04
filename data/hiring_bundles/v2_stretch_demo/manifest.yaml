@@ -39,11 +39,14 @@ optional_inputs:
   application_history: null
   credential_evidence: null
   application_volume: null
+  ats_export: mock_data/ats_export.json
+  ats_requisition: mock_data/ats_requisition.json
+  fraud_signals: mock_data/future_fraud_signals.json
 execution:
   deterministic: true
   allow_missing_optional_inputs: true
   require_human_review_for_final_decision: true
 notes:
-- V2 demo fixture reserves future scheduling, fraud, and ATS story data locally.
-- Future mock files are intentionally not referenced by the current manifest schema.
+- V2 demo fixture uses local-only scheduling, fraud, and ATS mock story data.
+- Mock fraud and ATS files are optional inputs and never call external services.
 - No LLM, OCR, calendar, ATS, HRIS, or background-check integration is performed.

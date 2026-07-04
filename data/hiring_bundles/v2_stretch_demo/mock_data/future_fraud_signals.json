@@ -8,6 +8,6 @@
     }
   ],
   "notes": [
-    "Future fraud demonstration mock only. Current pipeline must not create fraud_findings.json."
+    "Local fraud demonstration mock only. The pipeline may create fraud_findings.json, but no external background-check action is performed."
   ]
 }

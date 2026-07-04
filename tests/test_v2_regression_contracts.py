@@ -112,10 +112,15 @@ def test_optional_v2_artifacts_are_reserved_but_not_required(
 
     manifest = RunArtifactManifest.model_validate(read_json(result.artifact_manifest_path))
 
-    for key in ("interview_schedule_events", "fraud_findings", "ats_payload"):
+    for key in ("interview_schedule_events",):
         artifact = manifest.artifacts[key]
         assert artifact.required_for_mvp is False
         assert artifact.status == ArtifactStatus.RESERVED
+
+    for key in ("fraud_findings", "ats_payload"):
+        artifact = manifest.artifacts[key]
+        assert artifact.required_for_mvp is False
+        assert artifact.status == ArtifactStatus.CREATED
 
     interview_schedule = manifest.artifacts["interview_schedule"]
     assert interview_schedule.required_for_mvp is False
@@ -123,11 +128,15 @@ def test_optional_v2_artifacts_are_reserved_but_not_required(
     assert (result.run_dir / "artifacts/interview_schedule.json").exists()
 
     for relative_path in (
-        "artifacts/fraud_findings.json",
         "artifacts/interview_schedule_events.json",
-        "artifacts/ats_payload.json",
     ):
         assert not (result.run_dir / relative_path).exists(), relative_path
+
+    for relative_path in (
+        "artifacts/fraud_findings.json",
+        "artifacts/ats_payload.json",
+    ):
+        assert (result.run_dir / relative_path).exists(), relative_path
 
     artifact = InterviewScheduleArtifact.model_validate(
         read_json(result.run_dir / "artifacts/interview_schedule.json")

@@ -6,16 +6,20 @@
       "candidate_id": "candidate_v2_good",
       "application_id": "app_v2_good",
       "target_job_id": "job_ai_backend_engineer_001",
+      "resume_path": "resumes/candidate_v2_good_resume.pdf",
+      "application_status": "submitted",
       "intended_future_status": "interview_review"
     },
     {
       "candidate_id": "candidate_v2_manual_review",
       "application_id": "app_v2_manual_review",
       "target_job_id": "job_ai_backend_engineer_001",
+      "resume_path": "resumes/candidate_v2_manual_review_resume.pdf",
+      "application_status": "submitted",
       "intended_future_status": "manual_review"
     }
   ],
   "notes": [
-    "Future ATS mock only. Current pipeline must not create ats_payload.json."
+    "Local ATS mock only. The pipeline may create ats_payload.json, but no real ATS API is called."
   ]
 }
