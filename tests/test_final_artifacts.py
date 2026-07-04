@@ -195,6 +195,12 @@ def test_metrics_include_routing_counts(tmp_path: Path) -> None:
         "Recommended rejection — human approval required": 1
     }
     assert payload["routing_category_counts"] == payload["routing_counts"]
+    assert payload["routing_distribution_percent"] == {
+        "Recommended rejection — human approval required": 100.0
+    }
+    assert payload["exception_candidate_count"] == 1
+    assert payload["exception_rate_percent"] == 100.0
+    assert payload["manual_review_rate_percent"] == 100.0
     assert payload["avg_confidence_for_manual_review"] == 100.0
     assert payload["deterministic"] is True
 
@@ -255,8 +261,11 @@ def test_metrics_include_compliance_credential_and_anomaly_counts(tmp_path: Path
     payload = read_json(scaffold.artifacts_dir / "metrics.json")
 
     assert payload["candidates_with_compliance_flags"] == 1
+    assert payload["compliance_flag_rate_percent"] == 100.0
     assert payload["candidates_with_credential_issues"] == 1
+    assert payload["credential_issue_rate_percent"] == 100.0
     assert payload["candidates_with_anomalies"] == 1
+    assert payload["anomaly_rate_percent"] == 100.0
     assert payload["routing_category_counts"] == {"EEO compliance review": 1}
 
 

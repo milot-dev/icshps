@@ -237,6 +237,20 @@ def write_metrics(
         for decision in final_decision.decisions
         if _is_manual_review_routing(decision.routing_category)
     ]
+    compliance_flag_count = _candidate_count_with_category(
+        final_decision=final_decision,
+        categories={"compliance"},
+    )
+    credential_issue_count = _candidate_count_with_category(
+        final_decision=final_decision,
+        categories={"credential", "matching"},
+        title_tokens=("certification", "credential"),
+    )
+    anomaly_count = _candidate_count_with_category(
+        final_decision=final_decision,
+        categories={"anomaly", "linkedin_consistency"},
+    )
+    manual_review_count = len(manual_review_decisions)
 
     payload: dict[str, Any] = {
         **existing_metrics,
@@ -251,22 +265,37 @@ def write_metrics(
         "blocking_finding_count": blocking_finding_count,
         "routing_counts": dict(sorted(routing_counts.items())),
         "routing_category_counts": dict(sorted(routing_counts.items())),
-        "candidates_with_compliance_flags": _candidate_count_with_category(
-            final_decision=final_decision,
-            categories={"compliance"},
-        ),
-        "candidates_with_credential_issues": _candidate_count_with_category(
-            final_decision=final_decision,
-            categories={"credential", "matching"},
-            title_tokens=("certification", "credential"),
-        ),
-        "candidates_with_anomalies": _candidate_count_with_category(
-            final_decision=final_decision,
-            categories={"anomaly", "linkedin_consistency"},
-        ),
-        "avg_confidence_for_manual_review": _manual_review_percentage(
-            manual_review_count=len(manual_review_decisions),
+        "routing_distribution_percent": _routing_distribution_percent(
+            routing_counts=routing_counts,
             total_candidates=total_candidates,
+        ),
+        "exception_candidate_count": manual_review_count,
+        "exception_rate_percent": _percentage(
+            numerator=manual_review_count,
+            denominator=total_candidates,
+        ),
+        "candidates_with_compliance_flags": compliance_flag_count,
+        "compliance_flag_rate_percent": _percentage(
+            numerator=compliance_flag_count,
+            denominator=total_candidates,
+        ),
+        "candidates_with_credential_issues": credential_issue_count,
+        "credential_issue_rate_percent": _percentage(
+            numerator=credential_issue_count,
+            denominator=total_candidates,
+        ),
+        "candidates_with_anomalies": anomaly_count,
+        "anomaly_rate_percent": _percentage(
+            numerator=anomaly_count,
+            denominator=total_candidates,
+        ),
+        "manual_review_rate_percent": _percentage(
+            numerator=manual_review_count,
+            denominator=total_candidates,
+        ),
+        "avg_confidence_for_manual_review": _percentage(
+            numerator=manual_review_count,
+            denominator=total_candidates,
         ),
         "artifacts_created": sorted(
             {
@@ -581,10 +610,21 @@ def _is_manual_review_routing(category: RoutingCategory) -> bool:
     }
 
 
-def _manual_review_percentage(*, manual_review_count: int, total_candidates: int) -> float:
-    if total_candidates == 0:
+def _percentage(*, numerator: int, denominator: int) -> float:
+    if denominator == 0:
         return 0.0
-    return round((manual_review_count / total_candidates) * 100.0, 2)
+    return round((numerator / denominator) * 100.0, 2)
+
+
+def _routing_distribution_percent(
+    *,
+    routing_counts: Counter[str],
+    total_candidates: int,
+) -> dict[str, float]:
+    return {
+        category: _percentage(numerator=count, denominator=total_candidates)
+        for category, count in sorted(routing_counts.items())
+    }
 
 
 def _candidate_count_with_category(
