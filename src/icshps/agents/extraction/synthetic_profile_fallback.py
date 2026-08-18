@@ -12,7 +12,10 @@ FALLBACK_REASONS = {
     "resume_text_too_short": "Resume extraction returned text that is too short to use.",
     "profile_extraction_failed": "Candidate profile extraction failed.",
     "missing_required_profile_fields": "Required candidate profile fields could not be extracted.",
-    "image_based_resume_detected": "Resume appears to be image-based or scanned; OCR is out of scope.",
+    "image_based_resume_detected": (
+        "Resume appears to be image-based or scanned; optional vision extraction "
+        "was unavailable or disabled, so manual review is required."
+    ),
 }
 
 

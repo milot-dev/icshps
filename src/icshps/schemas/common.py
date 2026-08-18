@@ -35,6 +35,7 @@ class FindingCategory(str, Enum):
     CREDENTIAL = "credential"
     LINKEDIN_CONSISTENCY = "linkedin_consistency"
     ANOMALY = "anomaly"
+    FRAUD = "fraud"
     TRIAGE = "triage"
 
 

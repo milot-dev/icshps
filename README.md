@@ -8,14 +8,20 @@
   <img src="https://img.shields.io/badge/uv-Package_Manager-4B32C3?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Streamlit-Demo_UI-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" />
   <img src="https://img.shields.io/badge/Pydantic-Schemas-E92063?style=for-the-badge&logo=pydantic&logoColor=white" />
+  <img src="https://img.shields.io/badge/LangGraph-Orchestration-1C3C3C?style=for-the-badge" />
   <img src="https://img.shields.io/badge/PyMuPDF-PDF_Extraction-2E8B57?style=for-the-badge" />
   <img src="https://img.shields.io/badge/PyYAML-Bundle_Config-CB171E?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Google_Calendar-Scheduling-4285F4?style=for-the-badge&logo=googlecalendar&logoColor=white" />
+  <img src="https://img.shields.io/badge/OpenAI-Optional_Recovery%2FOCR-412991?style=for-the-badge&logo=openai&logoColor=white" />
   <img src="https://img.shields.io/badge/pytest-Testing-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" />
   <img src="https://img.shields.io/badge/Ruff-Linting-D7FF64?style=for-the-badge" />
 </p>
 
 
-ICSHPS is a local deterministic AI hiring workflow prototype designed to process structured Hiring Bundles and produce audit friendly candidate screening artifacts for human review.
+ICSHPS is a local, deterministic-first hiring workflow prototype. It processes
+structured Hiring Bundles, produces evidence-backed screening artifacts, and
+provides a Streamlit workspace for human review, approvals, and interview
+scheduling.
 
 The project focuses on controlled agent style processing, traceable evidence, shared schema contracts, deterministic run outputs, and a simple local demo flow. It is not a production ATS, background checking platform, or autonomous hiring decision maker.
 
@@ -24,8 +30,10 @@ The project focuses on controlled agent style processing, traceable evidence, sh
 
 ## Project State
 
-The project is a local deterministic MVP backend with expanded
-multi-candidate, triage, verification, and single-PDF demo support.
+The project is a local MVP with a LangGraph backend and a Streamlit review
+workspace. Deterministic extraction and routing remain the default; OpenAI
+text recovery and vision transcription are optional, disabled-by-default
+fallbacks.
 
 The repository includes:
 
@@ -35,10 +43,12 @@ The repository includes:
 - deterministic run scaffolding
 - Hiring Bundle loader and validation
 - Application Intake / Context Agent
-- deterministic end-to-end backend workflow
-- clean-PDF resume text extraction baseline
+- deterministic LangGraph backend workflow
+- native PDF extraction with optional vision transcription for scanned resume pages
 - candidate profile extraction baseline
 - multi-candidate pipeline handling
+- persisted multi-profile extraction artifacts
+- optional LangChain/OpenAI extraction recovery for weak deterministic parses
 - synthetic profile fallback
 - JD matching baseline
 - EEO compliance checks baseline
@@ -48,8 +58,13 @@ The repository includes:
 - structured findings format
 - final routing decisions
 - shortlist, hiring packet, audit log, and metrics artifacts
+- reviewer approval records and an interactive candidate review workspace
+- approval-gated Google Calendar availability suggestions
+- human-confirmed, invitation-free calendar holds with duplicate protection
+- conflict avoidance between same-run proposals and created holds across runs
 - one-command Hiring Bundle and single-PDF demo runs
 - scenario validation for MVP test bundles
+- LangGraph workflow tests
 - unit tests for the implemented foundation and backend pipeline
 
 ---
@@ -59,7 +74,7 @@ The repository includes:
 The MVP backend workflow executes a deterministic end-to-end hiring pipeline:
 
 ```text
-Hiring Bundle or Single Clean PDF Resume
+Hiring Bundle or Single PDF Resume
    ↓
 Run Scaffolding
    ↓
@@ -80,9 +95,15 @@ Anomaly Detection Agent
 Exception Triage and Lead Orchestration Agent
    ↓
 Final Routing Decisions and Run Artifacts
+   ↓
+Human Review and Approval in Streamlit
+   ↓
+Optional Interview Slot Suggestion and Confirmed Calendar Hold
 ```
 
-The backend pipeline deterministic. Each run creates a dedicated run directory under `runs/`, allowing the same input bundle to be re run and inspected consistently.
+The backend pipeline is deterministic by default. Each run creates a dedicated
+directory under `runs/`, allowing the same input bundle to be rerun and
+inspected consistently.
 
 Generated outputs include:
 
@@ -96,6 +117,7 @@ runs/<run_id>/
   artifacts/
     intake_findings.json
     candidate_profile.json
+    candidate_profiles.json
     match_scores.json
     compliance_flags.md
     verification_findings.json
@@ -103,6 +125,8 @@ runs/<run_id>/
     final_decision.json
     shortlist.csv
     hiring_packet.json
+    interview_schedule.json
+    interview_schedule_events.json
     metrics.json
     audit_log.md
   logs/
@@ -111,7 +135,18 @@ runs/<run_id>/
 
 The pipeline runs through scaffolding, bundle loading, validation, intake, extraction, matching, verification, compliance checks, anomaly detection, exception triage, routing, and final artifact generation.
 
-All final routing recommendations are decision support outputs and require human approval.
+`candidate_profile.json` remains the compatibility artifact for the primary candidate profile. `candidate_profiles.json` stores the full ordered list of extracted candidate profiles for multi-candidate runs.
+
+The backend pipeline uses LangGraph orchestration by default. The optional `--engine langgraph` flag is accepted for explicit runs; the previous pure-Python engine is no longer supported.
+
+All final routing recommendations are decision-support outputs and require
+human approval. Human approval does not silently override routing policy:
+interview scheduling is limited to candidates routed to `Fast-track review` or
+`Advance to interview review`.
+
+Optional LLM extraction recovery is disabled by default. When enabled, deterministic extraction still runs first, and the LangChain/OpenAI helper is only used as a recovery path for low-confidence or incomplete resume extraction. LLM output is schema validated, evidence checked against resume text, rejected if it contains hiring or routing recommendation language, and falls back safely to deterministic extraction on provider, schema, or validation failure.
+
+Optional vision OCR is also disabled by default. When enabled, native PyMuPDF text extraction still runs first. Image-based pages are rendered locally and sent to the OpenAI Responses API for transcription only when native text is unavailable or insufficient. Vision-derived evidence retains the PDF page number but intentionally has no bounding box or invented model confidence. Its confidence is reduced and every vision-backed profile is routed to manual review. Text-based LLM recovery remains a separate, optional evidence-checked layer.
 
 ---
 
@@ -127,14 +162,18 @@ ICSHPS/
 │
 ├── scripts/                         # Local CLI scripts for running and validating the pipeline
 │   ├── run_pipeline.py              # Main one command backend pipeline runner
-│   ├── run_end_to_end_workflow.py   # End to end workflow runner
 │   ├── validate_candidate_bundle.py # Single Hiring Bundle validation
 │   └── validate_scenario_bundles.py # MVP scenario validation
 │
 ├── src/
 │   └── icshps/
 │       ├── agents/                  # Agent and stage logic
-│       ├── graph/                   # Workflow orchestration layer
+│       │   └── scheduling/          # Calendar availability and hold creation
+│       ├── graph/                   # LangGraph workflow orchestration layer
+│       │   ├── result.py            # Shared workflow result contract
+│       │   ├── finalization.py      # Shared finalization helpers
+│       │   ├── state.py             # LangGraph runtime state definition
+│       │   └── langgraph_workflow.py # LangGraph runner and orchestration nodes
 │       ├── policies/                # Reserved policy configuration package
 │       ├── schemas/                 # Shared Pydantic schema contracts
 │       ├── services/                # Bundle loading, artifact writing, run scaffolding
@@ -152,10 +191,29 @@ ICSHPS/
 
 ## Running the Project
 
+Prerequisites:
+
+- Python 3.14
+- [uv](https://docs.astral.sh/uv/)
+- Google Calendar service-account access only when scheduling is enabled
+- an OpenAI API key only when optional LLM recovery or vision OCR is enabled
+
 Install dependencies:
 
 ```bash
 uv sync
+```
+
+Create local configuration without committing secrets:
+
+```bash
+cp .env.example .env
+```
+
+On PowerShell:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
 Run the test suite:
@@ -170,11 +228,83 @@ Run the backend pipeline for a Hiring Bundle:
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset
 ```
 
-Run the backend pipeline for a single clean PDF resume:
+Run the backend pipeline with an explicit LangGraph engine flag:
+
+```bash
+uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application --runs-root runs --reset --engine langgraph
+```
+
+Run the backend pipeline for a single PDF resume:
 
 ```bash
 uv run python scripts/run_pipeline.py data/hiring_bundles/clean_standard_application/resumes/candidate_clean_001_resume.pdf --runs-root runs --reset
 ```
+
+Run the LLM recovery demo bundle:
+
+```bash
+uv run python scripts/run_pipeline.py data/hiring_bundles/llm_recovery_skill_demo --runs-root runs --reset
+```
+
+Enable optional LLM recovery in a local `.env` or terminal environment:
+
+```text
+ICSHPS_LLM_EXTRACTION_ENABLED=true
+OPENAI_API_KEY=your_key_here
+ICSHPS_LLM_EXTRACTION_MODEL=gpt-4o-mini
+ICSHPS_LLM_EXTRACTION_MAX_TOKENS=1200
+```
+
+Keep `ICSHPS_LLM_EXTRACTION_ENABLED=false` for deterministic-only runs, CI, offline development, or when no OpenAI quota is available. Do not commit local `.env` files.
+
+Enable optional V2 Google Calendar interview schedule suggestions with environment
+configuration:
+
+```text
+ICSHPS_INTERVIEW_PANEL_MEMBERS_JSON=[{"name":"Panel Member","email":"panel@example.com","calendar_id":"panel@example.com"}]
+ICSHPS_GOOGLE_CALENDAR_CREDENTIALS_FILE=C:\path\to\service-account.json
+ICSHPS_INTERVIEW_TIMEZONE=Europe/Belgrade
+ICSHPS_INTERVIEW_DURATION_MINUTES=45
+ICSHPS_INTERVIEW_SEARCH_WORKDAYS=10
+ICSHPS_INTERVIEW_WORKDAY_START=10:00
+ICSHPS_INTERVIEW_WORKDAY_END=17:00
+```
+
+The scheduler uses Google Calendar FreeBusy lookup and writes
+`artifacts/interview_schedule.json`. Suggestions are created only after a
+reviewer approves a routing-eligible candidate in Streamlit, and every item
+retains `requires_human_confirmation=true`.
+
+Before proposing a slot, scheduling excludes:
+
+- Google Calendar busy intervals
+- other proposals in the same run
+- calendar holds recorded in `interview_schedule_events.json`
+- created holds from sibling runs using the same panel calendar
+- slots selected earlier in the same scheduling pass
+
+The Calendar Queue displays the date and Kosovo-local time and provides
+**Confirm and create event** and **Pick another time** actions. Confirmation is
+idempotent for a candidate/application pair: repeating it reuses the existing
+record instead of creating a duplicate event. Created holds are persisted in
+`artifacts/interview_schedule_events.json`.
+
+The service account needs FreeBusy visibility and event write access to the
+configured panel calendar. Holds use `sendUpdates=none`, contain no attendees,
+and do not email candidates or panel members. Missing approval, credentials,
+availability, write access, or panel configuration produces a controlled
+warning rather than crashing the pipeline.
+
+Enable scanned-PDF vision OCR separately:
+
+```text
+ICSHPS_VISION_OCR_ENABLED=true
+ICSHPS_VISION_OCR_MODEL=gpt-4o-mini
+ICSHPS_VISION_OCR_DPI=200
+ICSHPS_VISION_OCR_MAX_OUTPUT_TOKENS=4000
+```
+
+Vision OCR uses the same `OPENAI_API_KEY`, and that key must have **Write** permission for Responses (`/v1/responses`). PDF page images are sent as in-memory base64 inputs and are not written as additional artifacts. If the API is disabled, unavailable, denied, or returns no usable transcription, the pipeline records a controlled warning and retains the existing fallback behavior.
 
 Run scenario validation for all available MVP Hiring Bundles:
 
@@ -187,6 +317,15 @@ Run the Streamlit demo shell:
 ```bash
 uv run streamlit run streamlit_app.py
 ```
+
+The workspace provides Run Intake, Dashboard, Candidate Review, Approvals,
+Calendar Queue, and Artifacts tabs. A typical local flow is:
+
+1. Run or select a Hiring Bundle.
+2. Review the candidate profile, match result, findings, and routing rationale.
+3. Record a reviewer decision.
+4. For an eligible approved candidate, generate an available interview slot.
+5. Confirm the slot to create an invitation-free calendar hold.
 
 Check linting with Ruff:
 

@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from icshps.graph import run_langgraph_workflow
+from icshps.schemas import InterviewScheduleArtifact
+
+V2_DEMO_BUNDLE = Path("data/hiring_bundles/v2_stretch_demo")
+
+REQUIRED_FIXTURE_FILES = (
+    "manifest.yaml",
+    "job_description.md",
+    "requirements/skills_matrix.yaml",
+    "policies/eeo_policy.yaml",
+    "policies/credential_rules.yaml",
+    "mock_data/hris_master.yaml",
+)
+
+STRETCH_MOCK_FILES = (
+    "mock_data/panel_availability.yaml",
+    "mock_data/ats_export.json",
+    "mock_data/ats_requisition.json",
+    "mock_data/future_fraud_signals.json",
+)
+
+REQUIRED_OUTPUTS = (
+    "artifact_manifest.json",
+    "artifacts/metrics.json",
+    "artifacts/audit_log.md",
+)
+
+GENERATED_STRETCH_ARTIFACTS = (
+    "artifacts/fraud_findings.json",
+    "artifacts/ats_payload.json",
+)
+
+
+def test_v2_demo_fixture_has_required_bundle_structure() -> None:
+    for relative_path in REQUIRED_FIXTURE_FILES:
+        assert (V2_DEMO_BUNDLE / relative_path).exists(), relative_path
+
+
+def test_v2_demo_fixture_runs_through_python_workflow(tmp_path: Path) -> None:
+    result = run_langgraph_workflow(
+        V2_DEMO_BUNDLE,
+        runs_root=tmp_path / "runs",
+    )
+
+    assert result.status == "completed"
+    assert result.ok
+    assert result.run_dir is not None
+
+    for relative_path in REQUIRED_OUTPUTS:
+        assert (result.run_dir / relative_path).exists(), relative_path
+
+
+def test_v2_demo_fixture_runs_through_langgraph_workflow(tmp_path: Path) -> None:
+    result = run_langgraph_workflow(
+        V2_DEMO_BUNDLE,
+        runs_root=tmp_path / "runs",
+    )
+
+    assert result.status == "completed"
+    assert result.ok
+    assert result.run_dir is not None
+
+    for relative_path in REQUIRED_OUTPUTS:
+        assert (result.run_dir / relative_path).exists(), relative_path
+
+
+def test_v2_demo_fixture_generates_local_ats_and_fraud_artifacts(
+    tmp_path: Path,
+) -> None:
+    for relative_path in STRETCH_MOCK_FILES:
+        assert (V2_DEMO_BUNDLE / relative_path).exists(), relative_path
+
+    result = run_langgraph_workflow(
+        V2_DEMO_BUNDLE,
+        runs_root=tmp_path / "runs",
+    )
+
+    assert result.status == "completed"
+    assert result.run_dir is not None
+
+    schedule_path = result.run_dir / "artifacts/interview_schedule.json"
+    assert schedule_path.exists()
+    schedule = InterviewScheduleArtifact.model_validate_json(
+        schedule_path.read_text(encoding="utf-8")
+    )
+    assert schedule.items == []
+    assert schedule.warnings
+
+    for relative_path in GENERATED_STRETCH_ARTIFACTS:
+        assert (result.run_dir / relative_path).exists(), relative_path

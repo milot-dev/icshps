@@ -9,6 +9,7 @@ These contracts are frozen for Sprint 2. Do not rename artifact files, routing l
 | `context_packet.json` | Member 1 | `BundleContext` |
 | `intake_findings.json` | Member 1 | `FindingsArtifact` |
 | `candidate_profile.json` | Member 2 | `CandidateProfile` |
+| `candidate_profiles.json` | Member 2 | `list[CandidateProfile]` |
 | `match_scores.json` | Member 2 | `MatchResultsArtifact` |
 | `compliance_flags.md` | Member 3 | Markdown |
 | `verification_findings.json` | Member 3 | `FindingsArtifact` |

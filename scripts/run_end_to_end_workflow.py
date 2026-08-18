@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from icshps.graph import run_end_to_end_workflow
+from icshps.graph import run_langgraph_workflow
 
 
 def main() -> None:
-    result = run_end_to_end_workflow(
+    result = run_langgraph_workflow(
         Path("data/hiring_bundles/clean_standard_application")
     )
 

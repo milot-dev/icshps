@@ -5,6 +5,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from icshps.utils.file_io import write_text
 from icshps.utils.ids import deterministic_name_id, sha256_file
 from icshps.utils.text import slugify
@@ -50,6 +52,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--reset",
         action="store_true",
         help="Delete the existing run directory before running.",
+    )
+    parser.add_argument(
+        "--engine",
+        choices=("langgraph",),
+        default="langgraph",
+        help="Workflow engine to use. Only langgraph is supported.",
     )
     return parser
 
@@ -198,6 +206,8 @@ def _print_success(run_id: str, run_dir: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
+
     parser = _build_parser()
     args = parser.parse_args(argv)
 
@@ -213,11 +223,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.reset and run_dir.exists():
             shutil.rmtree(run_dir)
 
-        # Keep this import inside main so invalid CLI usage fails quickly
-        # without importing the whole pipeline.
-        from icshps.graph.workflow import run_end_to_end_workflow
+        from icshps.graph.langgraph_workflow import run_langgraph_workflow
 
-        run_end_to_end_workflow(
+        run_langgraph_workflow(
             bundle_path=bundle_path,
             runs_root=runs_root,
             run_id=run_id,

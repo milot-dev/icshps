@@ -7,6 +7,7 @@ from icshps.schemas.common import (
     RoutingCategory,
     Severity,
 )
+from icshps.schemas.ats import AtsPayload, AtsPayloadRecord
 from icshps.schemas.context import (
     BundleContext,
     BundleInfo,
@@ -18,6 +19,14 @@ from icshps.schemas.context import (
 )
 from icshps.schemas.decision import CandidateRoutingDecision, FinalDecisionArtifact
 from icshps.schemas.findings import Finding, FindingsArtifact
+from icshps.schemas.interview_schedule import (
+    InterviewScheduleArtifact,
+    InterviewScheduleEventRecord,
+    InterviewScheduleEventsArtifact,
+    InterviewScheduleItem,
+    InterviewScheduleWarning,
+    PanelMember,
+)
 from icshps.schemas.matching import (
     CandidateMatchResult,
     JobMatchRequirements,
@@ -52,6 +61,8 @@ __all__ = [
     "Severity",
     "FindingCategory",
     "RoutingCategory",
+    "AtsPayload",
+    "AtsPayloadRecord",
     "BundleContext",
     "BundleInfo",
     "ScenarioInfo",
@@ -67,6 +78,12 @@ __all__ = [
     "CandidateProfile",
     "Finding",
     "FindingsArtifact",
+    "PanelMember",
+    "InterviewScheduleItem",
+    "InterviewScheduleWarning",
+    "InterviewScheduleArtifact",
+    "InterviewScheduleEventRecord",
+    "InterviewScheduleEventsArtifact",
     "RequirementCheck",
     "JobMatchRequirements",
     "CandidateMatchResult",

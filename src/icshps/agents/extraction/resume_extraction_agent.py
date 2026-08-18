@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 import re
 
 from icshps.agents.extraction.education_extractor import (
@@ -8,6 +9,12 @@ from icshps.agents.extraction.education_extractor import (
 )
 from icshps.agents.extraction.employment_history_extractor import (
     extract_employment_history,
+)
+from icshps.agents.extraction.llm_recovery import (
+    LLMRecoveryMetrics,
+    LLMRecoveryProvider,
+    apply_llm_recovery,
+    llm_recovery_enabled,
 )
 from icshps.agents.extraction.pdf_bounding_boxes import find_text_bounding_box
 from icshps.agents.extraction.synthetic_profile_fallback import (
@@ -68,6 +75,8 @@ MISSING_CONFIDENCE = 0.0
 CONTACT_CONFIDENCE_WEIGHT = 0.70
 SKILLS_CONFIDENCE_WEIGHT = 0.30
 LOW_CONFIDENCE_REVIEW_FLAG = "Low extraction confidence; manual review recommended."
+VISION_OCR_CONFIDENCE_MULTIPLIER = 0.75
+VISION_OCR_REVIEW_FLAG = "Vision-extracted resume text requires manual review."
 MISSING_EVIDENCE_REVIEW_FLAG = (
     "Some extracted fields are missing evidence; manual review recommended."
 )
@@ -80,38 +89,41 @@ def extract_candidate_profile(
     application_id: str,
     role_id: str,
     source_file: str | Path = "resume_text",
+    llm_provider: LLMRecoveryProvider | None = None,
+    llm_metrics: dict[str, Any] | None = None,
+    ocr_manual_review_required: bool = False,
 ) -> CandidateProfile:
     normalized_text = normalize_resume_text(resume_text)
     source_path = Path(str(source_file))
+    ocr_requires_review = ocr_manual_review_required
 
     if should_use_synthetic_fallback(extracted_text=normalized_text):
+        _record_llm_metrics(
+            llm_metrics,
+            LLMRecoveryMetrics(
+                enabled=llm_recovery_enabled(),
+                final_extraction_mode="synthetic_fallback",
+                manual_review_flag_count=2,
+                skipped_reason="resume_text_unusable",
+            ),
+        )
         trigger = (
             "resume_text_empty" if not normalized_text else "resume_text_too_short"
         )
-        return build_synthetic_candidate_profile(
+        profile = build_synthetic_candidate_profile(
             candidate_id=candidate_id,
             application_id=application_id,
             role_id=role_id,
             source_file=source_file,
             reason=fallback_reason_for_trigger(trigger),
         )
+        _append_ocr_review_flag(profile, ocr_requires_review)
+        _update_manual_review_metric(llm_metrics, profile)
+        return profile
 
     try:
         lines = normalized_text.splitlines()
         full_name = extract_full_name(lines, source_path)
-
-        if should_use_synthetic_fallback(
-            extracted_text=normalized_text,
-            missing_required_fields=full_name.value is None,
-        ):
-            return build_synthetic_candidate_profile(
-                candidate_id=candidate_id,
-                application_id=application_id,
-                role_id=role_id,
-                source_file=source_file,
-                reason=fallback_reason_for_trigger("missing_required_profile_fields"),
-            )
-
         email = extract_regex_field(
             EMAIL_RE, normalized_text, source_path, EMAIL_CONFIDENCE
         )
@@ -131,6 +143,36 @@ def extract_candidate_profile(
             source_path,
             make_employment_evidence,
         )
+        ocr_confidence_multiplier = _ocr_confidence_multiplier(
+            vision_ocr_used=ocr_manual_review_required,
+        )
+        if ocr_confidence_multiplier is not None:
+            full_name = _penalize_ocr_confidence(
+                full_name, ocr_confidence_multiplier, "regex_resume_llm_vision"
+            )
+            email = _penalize_optional_ocr_confidence(
+                email, ocr_confidence_multiplier, "regex_resume_llm_vision"
+            )
+            phone = _penalize_optional_ocr_confidence(
+                phone, ocr_confidence_multiplier, "regex_resume_llm_vision"
+            )
+            location = _penalize_optional_ocr_confidence(
+                location, ocr_confidence_multiplier, "regex_resume_llm_vision"
+            )
+            skills = _penalize_ocr_records(
+                skills, ocr_confidence_multiplier, "regex_resume_llm_vision"
+            )
+            certifications = _penalize_ocr_records(
+                certifications, ocr_confidence_multiplier, "regex_resume_llm_vision"
+            )
+            education = _penalize_ocr_records(
+                education, ocr_confidence_multiplier, "regex_resume_llm_vision"
+            )
+            employment_history = _penalize_ocr_records(
+                employment_history,
+                ocr_confidence_multiplier,
+                "regex_resume_llm_vision",
+            )
         extraction_errors = build_extraction_errors(email=email, phone=phone)
         section_confidence = calculate_section_confidence(
             full_name=full_name,
@@ -146,18 +188,122 @@ def extract_candidate_profile(
         section_confidence_bands = calculate_section_confidence_bands(
             section_confidence
         )
-        manual_review_flags = [error.message for error in extraction_errors]
+
+        llm_recovery = apply_llm_recovery(
+            resume_text=normalized_text,
+            source_path=source_path,
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            location=location,
+            skills=skills,
+            employment_history=employment_history,
+            education=education,
+            certifications=certifications,
+            extraction_confidence=extraction_confidence,
+            section_confidence=section_confidence,
+            provider=llm_provider,
+        )
+        _record_llm_metrics(llm_metrics, llm_recovery.metrics)
+
+        full_name = llm_recovery.full_name
+        email = llm_recovery.email
+        phone = llm_recovery.phone
+        location = llm_recovery.location
+        skills = llm_recovery.skills
+        employment_history = llm_recovery.employment_history
+        education = llm_recovery.education
+        certifications = llm_recovery.certifications
+
+        if ocr_confidence_multiplier is not None:
+            full_name = _penalize_ocr_confidence(
+                full_name, ocr_confidence_multiplier, "llm_recovery_vision"
+            )
+            email = _penalize_optional_ocr_confidence(
+                email, ocr_confidence_multiplier, "llm_recovery_vision"
+            )
+            phone = _penalize_optional_ocr_confidence(
+                phone, ocr_confidence_multiplier, "llm_recovery_vision"
+            )
+            location = _penalize_optional_ocr_confidence(
+                location, ocr_confidence_multiplier, "llm_recovery_vision"
+            )
+            skills = _penalize_ocr_records(
+                skills, ocr_confidence_multiplier, "llm_recovery_vision"
+            )
+            certifications = _penalize_ocr_records(
+                certifications, ocr_confidence_multiplier, "llm_recovery_vision"
+            )
+            education = _penalize_ocr_records(
+                education, ocr_confidence_multiplier, "llm_recovery_vision"
+            )
+            employment_history = _penalize_ocr_records(
+                employment_history, ocr_confidence_multiplier, "llm_recovery_vision"
+            )
+
+        if should_use_synthetic_fallback(
+            extracted_text=normalized_text,
+            missing_required_fields=full_name.value is None,
+        ):
+            llm_recovery.metrics.final_extraction_mode = "synthetic_fallback"
+            llm_recovery.metrics.manual_review_flag_count = 2
+            _record_llm_metrics(llm_metrics, llm_recovery.metrics)
+            profile = build_synthetic_candidate_profile(
+                candidate_id=candidate_id,
+                application_id=application_id,
+                role_id=role_id,
+                source_file=source_file,
+                reason=fallback_reason_for_trigger("missing_required_profile_fields"),
+            )
+            _append_ocr_review_flag(profile, ocr_requires_review)
+            _update_manual_review_metric(llm_metrics, profile)
+            return profile
+
+        extraction_errors = build_extraction_errors(email=email, phone=phone)
+        section_confidence = calculate_section_confidence(
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            location=location,
+            skills=skills,
+            certifications=certifications,
+            education=education,
+            employment_history=employment_history,
+        )
+        extraction_confidence = calculate_profile_confidence(section_confidence)
+        section_confidence_bands = calculate_section_confidence_bands(
+            section_confidence
+        )
+        manual_review_flags = [
+            *[error.message for error in extraction_errors],
+            *llm_recovery.manual_review_flags,
+        ]
     except Exception as exc:
-        return build_synthetic_candidate_profile(
+        _record_llm_metrics(
+            llm_metrics,
+            LLMRecoveryMetrics(
+                enabled=llm_recovery_enabled(),
+                final_extraction_mode="synthetic_fallback",
+                manual_review_flag_count=2,
+                skipped_reason="deterministic_extraction_failed",
+            ),
+        )
+        profile = build_synthetic_candidate_profile(
             candidate_id=candidate_id,
             application_id=application_id,
             role_id=role_id,
             source_file=source_file,
             reason=f"{fallback_reason_for_trigger('profile_extraction_failed')} {exc}",
         )
+        _append_ocr_review_flag(profile, ocr_requires_review)
+        _update_manual_review_metric(llm_metrics, profile)
+        return profile
 
     if extraction_confidence < LOW_EXTRACTION_CONFIDENCE_THRESHOLD:
         manual_review_flags.append(LOW_CONFIDENCE_REVIEW_FLAG)
+
+    if ocr_requires_review:
+        manual_review_flags.append(VISION_OCR_REVIEW_FLAG)
 
     if has_extracted_values_missing_evidence(
         full_name=full_name,
@@ -169,6 +315,9 @@ def extract_candidate_profile(
         employment_history=employment_history,
     ):
         manual_review_flags.append(MISSING_EVIDENCE_REVIEW_FLAG)
+
+    if llm_metrics is not None:
+        llm_metrics["manual_review_flag_count"] = len(manual_review_flags)
 
     return CandidateProfile(
         candidate_id=candidate_id,
@@ -203,6 +352,90 @@ def extract_candidate_profile(
         synthetic_fallback_used=False,
         extraction_errors=extraction_errors,
     )
+
+
+def _ocr_confidence_multiplier(
+    *,
+    vision_ocr_used: bool = False,
+) -> float | None:
+    if vision_ocr_used:
+        return VISION_OCR_CONFIDENCE_MULTIPLIER
+    return None
+
+
+def _penalize_optional_ocr_confidence(
+    record: Any | None,
+    multiplier: float,
+    extraction_method: str,
+) -> Any | None:
+    if record is None:
+        return None
+    return _penalize_ocr_confidence(record, multiplier, extraction_method)
+
+
+def _penalize_ocr_records(
+    records: list[Any],
+    multiplier: float,
+    extraction_method: str,
+) -> list[Any]:
+    return [
+        _penalize_ocr_confidence(record, multiplier, extraction_method)
+        for record in records
+    ]
+
+
+def _penalize_ocr_confidence(
+    record: Any,
+    multiplier: float,
+    extraction_method: str,
+) -> Any:
+    matching_evidence = [
+        evidence
+        for evidence in record.evidence
+        if evidence.extraction_method == extraction_method
+    ]
+    if not matching_evidence:
+        return record
+
+    updated_evidence = [
+        evidence.model_copy(
+            update={"confidence": _reduced_confidence(evidence.confidence, multiplier)}
+        )
+        if evidence.extraction_method == extraction_method
+        else evidence
+        for evidence in record.evidence
+    ]
+    return record.model_copy(
+        update={
+            "confidence": _reduced_confidence(record.confidence, multiplier),
+            "evidence": updated_evidence,
+        }
+    )
+
+
+def _reduced_confidence(confidence: float | None, multiplier: float) -> float | None:
+    if confidence is None:
+        return None
+    return round(confidence * multiplier, 3)
+
+
+def _append_ocr_review_flag(
+    profile: CandidateProfile,
+    ocr_requires_review: bool,
+) -> None:
+    if (
+        ocr_requires_review
+        and VISION_OCR_REVIEW_FLAG not in profile.manual_review_flags
+    ):
+        profile.manual_review_flags.append(VISION_OCR_REVIEW_FLAG)
+
+
+def _update_manual_review_metric(
+    llm_metrics: dict[str, Any] | None,
+    profile: CandidateProfile,
+) -> None:
+    if llm_metrics is not None:
+        llm_metrics["manual_review_flag_count"] = len(profile.manual_review_flags)
 
 
 def normalize_resume_text(text: str) -> str:
@@ -554,6 +787,12 @@ def make_evidence(
     normalized_snippet = normalize_whitespace(snippet)[:240]
     bounding_box_result = find_text_bounding_box(source_path, normalized_snippet)
 
+    extraction_method = (
+        "regex_resume_llm_vision"
+        if bounding_box_result.source_method == "llm_vision_ocr"
+        else "regex_resume_text"
+    )
+
     return EvidenceRef(
         evidence_id=evidence_id,
         field_path=field_path,
@@ -563,7 +802,7 @@ def make_evidence(
         section=section,
         text_snippet=normalized_snippet,
         confidence=confidence,
-        extraction_method="regex_resume_text",
+        extraction_method=extraction_method,
         bounding_box=bounding_box_result.bounding_box,
     )
 
@@ -663,3 +902,12 @@ def contact_field_for_pattern(pattern: re.Pattern[str]) -> str:
         return "phone"
 
     return "contact"
+
+
+def _record_llm_metrics(
+    metrics_payload: dict[str, Any] | None,
+    metrics: LLMRecoveryMetrics,
+) -> None:
+    if metrics_payload is not None:
+        metrics_payload.clear()
+        metrics_payload.update(metrics.as_dict())

@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from icshps.agents.ats_mock import build_ats_payload
 from icshps.schemas import (
     BundleContext,
     CandidateProfile,
@@ -20,12 +21,14 @@ from icshps.services.artifact_writer import (
     read_json_artifact,
     write_json_artifact,
 )
-from icshps.services.run_scaffolding import RunScaffold
+from icshps.services.candidate_artifacts import read_candidate_profiles
+from icshps.services.run_scaffolding import V2_METRIC_DEFAULTS, RunScaffold
 
 FINAL_ARTIFACT_KEYS: tuple[str, ...] = (
     "final_decision",
     "shortlist",
     "hiring_packet",
+    "ats_payload",
     "metrics",
     "audit_log",
 )
@@ -75,6 +78,11 @@ def write_final_run_artifacts(
 
     context = _read_optional_context(scaffold)
     candidate_profile = _read_optional_candidate_profile(scaffold)
+    resolved_candidate_profiles = (
+        candidate_profiles
+        if candidate_profiles is not None
+        else read_candidate_profiles(scaffold)
+    )
     match_results = _read_optional_match_results(scaffold)
 
     paths = (
@@ -91,8 +99,13 @@ def write_final_run_artifacts(
             final_decision=final_decision,
             context=context,
             candidate_profile=candidate_profile,
-            candidate_profiles=candidate_profiles or [],
+            candidate_profiles=resolved_candidate_profiles,
             match_results=match_results,
+        ),
+        write_ats_payload(
+            scaffold=scaffold,
+            final_decision=final_decision,
+            context=context,
         ),
         write_metrics(
             scaffold=scaffold,
@@ -187,6 +200,7 @@ def write_hiring_packet(
         ],
         "artifact_references": {
             "candidate_profile": "artifacts/candidate_profile.json",
+            "candidate_profiles": "artifacts/candidate_profiles.json",
             "match_scores": "artifacts/match_scores.json",
             "unified_findings": "artifacts/final_decision.json#findings",
             "shortlist": "artifacts/shortlist.csv",
@@ -209,6 +223,28 @@ def write_hiring_packet(
     )
 
 
+def write_ats_payload(
+    *,
+    scaffold: RunScaffold,
+    final_decision: FinalDecisionArtifact,
+    context: BundleContext | None = None,
+) -> Path:
+    """Write a local-only dry-run ATS payload artifact."""
+
+    return write_json_artifact(
+        scaffold=scaffold,
+        artifact_key="ats_payload",
+        payload=build_ats_payload(
+            final_decision=final_decision,
+            ats_export_path=context.optional_inputs.ats_export if context else None,
+            ats_requisition_path=(
+                context.optional_inputs.ats_requisition if context else None
+            ),
+        ),
+        mark_created=False,
+    )
+
+
 def write_metrics(
     *,
     scaffold: RunScaffold,
@@ -217,6 +253,7 @@ def write_metrics(
 ) -> Path:
     """Write deterministic summary metrics for the completed local run."""
 
+    existing_metrics = read_json_artifact(scaffold=scaffold, artifact_key="metrics") or {}
     routing_counts = Counter(
         decision.routing_category.value for decision in final_decision.decisions
     )
@@ -229,42 +266,90 @@ def write_metrics(
         for decision in final_decision.decisions
         if _is_manual_review_routing(decision.routing_category)
     ]
+    compliance_flag_count = _candidate_count_with_category(
+        final_decision=final_decision,
+        categories={"compliance"},
+    )
+    credential_issue_count = _candidate_count_with_category(
+        final_decision=final_decision,
+        categories={"credential", "matching"},
+        title_tokens=("certification", "credential"),
+    )
+    anomaly_count = _candidate_count_with_category(
+        final_decision=final_decision,
+        categories={"anomaly", "linkedin_consistency", "fraud"},
+    )
+    fraud_finding_count = _finding_count_with_category(
+        final_decision=final_decision,
+        categories={"fraud"},
+    )
+    ats_mock_records_loaded = _ats_payload_record_count(scaffold)
+    manual_review_count = len(manual_review_decisions)
 
     payload: dict[str, Any] = {
+        **existing_metrics,
         "run_id": final_decision.run_id,
         "bundle_id": final_decision.bundle_id,
         "scenario_type": final_decision.scenario_type,
         "candidate_count": total_candidates,
+        **_v2_metric_values(scaffold),
         "total_candidates": total_candidates,
         "decision_count": len(final_decision.decisions),
         "finding_count": len(final_decision.findings),
         "blocking_finding_count": blocking_finding_count,
         "routing_counts": dict(sorted(routing_counts.items())),
         "routing_category_counts": dict(sorted(routing_counts.items())),
-        "candidates_with_compliance_flags": _candidate_count_with_category(
-            final_decision=final_decision,
-            categories={"compliance"},
-        ),
-        "candidates_with_credential_issues": _candidate_count_with_category(
-            final_decision=final_decision,
-            categories={"credential", "matching"},
-            title_tokens=("certification", "credential"),
-        ),
-        "candidates_with_anomalies": _candidate_count_with_category(
-            final_decision=final_decision,
-            categories={"anomaly", "linkedin_consistency"},
-        ),
-        "avg_confidence_for_manual_review": _manual_review_percentage(
-            manual_review_count=len(manual_review_decisions),
+        "routing_distribution_percent": _routing_distribution_percent(
+            routing_counts=routing_counts,
             total_candidates=total_candidates,
         ),
-        "artifacts_created": [
-            "artifacts/final_decision.json",
-            "artifacts/shortlist.csv",
-            "artifacts/hiring_packet.json",
-            "artifacts/metrics.json",
-            "artifacts/audit_log.md",
-        ],
+        "exception_candidate_count": manual_review_count,
+        "exception_rate_percent": _percentage(
+            numerator=manual_review_count,
+            denominator=total_candidates,
+        ),
+        "candidates_with_compliance_flags": compliance_flag_count,
+        "compliance_flag_rate_percent": _percentage(
+            numerator=compliance_flag_count,
+            denominator=total_candidates,
+        ),
+        "candidates_with_credential_issues": credential_issue_count,
+        "credential_issue_rate_percent": _percentage(
+            numerator=credential_issue_count,
+            denominator=total_candidates,
+        ),
+        "candidates_with_anomalies": anomaly_count,
+        "anomaly_rate_percent": _percentage(
+            numerator=anomaly_count,
+            denominator=total_candidates,
+        ),
+        "fraud_findings_count": max(
+            int(existing_metrics.get("fraud_findings_count", 0) or 0),
+            fraud_finding_count,
+        ),
+        "ats_mock_records_loaded": max(
+            int(existing_metrics.get("ats_mock_records_loaded", 0) or 0),
+            ats_mock_records_loaded,
+        ),
+        "manual_review_rate_percent": _percentage(
+            numerator=manual_review_count,
+            denominator=total_candidates,
+        ),
+        "avg_confidence_for_manual_review": _percentage(
+            numerator=manual_review_count,
+            denominator=total_candidates,
+        ),
+        "artifacts_created": sorted(
+            {
+                *existing_metrics.get("artifacts_created", []),
+                "artifacts/final_decision.json",
+                "artifacts/shortlist.csv",
+                "artifacts/hiring_packet.json",
+                "artifacts/ats_payload.json",
+                "artifacts/metrics.json",
+                "artifacts/audit_log.md",
+            }
+        ),
         "deterministic": True,
         "requires_human_approval": True,
         "final_hiring_decision_made_by_system": False,
@@ -498,17 +583,43 @@ def _build_audit_log_markdown(
         "- `artifacts/final_decision.json`\n"
         "- `artifacts/shortlist.csv`\n"
         "- `artifacts/hiring_packet.json`\n"
+        "- `artifacts/ats_payload.json`\n"
         "- `artifacts/metrics.json`\n"
         "- `artifacts/audit_log.md`\n\n"
         "## Candidate Routing Summary\n\n"
         f"{routing_lines}\n\n"
         "## Important Findings\n\n"
         f"{finding_lines}\n\n"
+        "## V2 Optional Feature Status\n\n"
+        "- LLM-assisted extraction: `not enabled by default`.\n"
+        "- Scanned resume detection: `not generated in this run`.\n"
+        "- Interview scheduling artifact: "
+        f"`{_optional_artifact_status(scaffold, 'interview_schedule')}`.\n"
+        "- Fraud findings artifact: "
+        f"`{_optional_artifact_status(scaffold, 'fraud_findings')}`.\n"
+        "- ATS mock payload: "
+        f"`{_optional_artifact_status(scaffold, 'ats_payload')}`.\n"
+        "- Real external integrations: `not used`.\n\n"
+        "Interview scheduling, when generated, uses Google Calendar availability "
+        "lookup only. It does not create calendar events or send invitations.\n\n"
         "## Human Approval Reminder\n\n"
         "ICSHPS is a local decision-support MVP. It does not make final hiring, "
         "rejection, interview, HRIS, ATS, LinkedIn, background-check, email, or "
         "calendar actions. Every recommendation requires human approval.\n"
     )
+
+
+def _v2_metric_values(scaffold: RunScaffold) -> dict[str, Any]:
+    existing = read_json_artifact(scaffold=scaffold, artifact_key="metrics") or {}
+    return {
+        key: existing.get(key, default)
+        for key, default in V2_METRIC_DEFAULTS.items()
+    }
+
+
+def _optional_artifact_status(scaffold: RunScaffold, artifact_key: str) -> str:
+    path = artifact_path(scaffold, artifact_key)
+    return "generated" if path.exists() else "not generated"
 
 
 def _render_decision_line(decision: CandidateRoutingDecision) -> str:
@@ -543,10 +654,21 @@ def _is_manual_review_routing(category: RoutingCategory) -> bool:
     }
 
 
-def _manual_review_percentage(*, manual_review_count: int, total_candidates: int) -> float:
-    if total_candidates == 0:
+def _percentage(*, numerator: int, denominator: int) -> float:
+    if denominator == 0:
         return 0.0
-    return round((manual_review_count / total_candidates) * 100.0, 2)
+    return round((numerator / denominator) * 100.0, 2)
+
+
+def _routing_distribution_percent(
+    *,
+    routing_counts: Counter[str],
+    total_candidates: int,
+) -> dict[str, float]:
+    return {
+        category: _percentage(numerator=count, denominator=total_candidates)
+        for category, count in sorted(routing_counts.items())
+    }
 
 
 def _candidate_count_with_category(
@@ -568,3 +690,23 @@ def _candidate_count_with_category(
             candidate_ids.add(finding.candidate_id)
 
     return len(candidate_ids)
+
+
+def _finding_count_with_category(
+    *,
+    final_decision: FinalDecisionArtifact,
+    categories: set[str],
+) -> int:
+    return sum(
+        1
+        for finding in final_decision.findings
+        if finding.category.value in categories
+    )
+
+
+def _ats_payload_record_count(scaffold: RunScaffold) -> int:
+    payload = read_json_artifact(scaffold=scaffold, artifact_key="ats_payload") or {}
+    if not payload.get("export_enabled", False):
+        return 0
+    records = payload.get("records", [])
+    return len(records) if isinstance(records, list) else 0

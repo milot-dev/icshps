@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
-from icshps.graph import run_end_to_end_workflow
+from icshps.graph import run_langgraph_workflow
 
 
 def test_end_to_end_workflow_creates_current_backend_artifacts(tmp_path: Path) -> None:
     bundle_path = build_bundle(tmp_path)
 
-    result = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    result = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     assert result.ok
     assert result.status == "completed"
@@ -63,7 +64,7 @@ def test_end_to_end_workflow_creates_current_backend_artifacts(tmp_path: Path) -
 def test_end_to_end_workflow_marks_artifact_manifest_correctly(tmp_path: Path) -> None:
     bundle_path = build_bundle(tmp_path)
 
-    result = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    result = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     manifest = read_json(result.artifact_manifest_path)  # type: ignore[arg-type]
     artifacts = manifest["artifacts"]
@@ -90,7 +91,7 @@ def test_end_to_end_workflow_stops_safely_when_intake_is_blocked(
     bundle_path = build_bundle(tmp_path)
     (bundle_path / "requirements" / "skills_matrix.yaml").unlink()
 
-    result = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    result = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     assert not result.ok
     assert result.status == "blocked"
@@ -113,8 +114,8 @@ def test_end_to_end_workflow_stops_safely_when_intake_is_blocked(
 def test_end_to_end_workflow_outputs_are_deterministic(tmp_path: Path) -> None:
     bundle_path = build_bundle(tmp_path)
 
-    first = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
-    second = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    first = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
+    second = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     assert first.run_id == second.run_id
     assert first.created_artifacts == second.created_artifacts
@@ -167,7 +168,7 @@ def test_end_to_end_workflow_processes_multiple_candidates(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    result = run_end_to_end_workflow(bundle_path, runs_root=tmp_path / "runs")
+    result = run_langgraph_workflow(bundle_path, runs_root=tmp_path / "runs")
 
     assert result.ok
     assert result.run_dir is not None
@@ -175,18 +176,35 @@ def test_end_to_end_workflow_processes_multiple_candidates(tmp_path: Path) -> No
     matches = read_json(result.run_dir / "artifacts" / "match_scores.json")
     decision = read_json(result.run_dir / "artifacts" / "final_decision.json")
     metrics = read_json(result.run_dir / "artifacts" / "metrics.json")
+    primary_profile = read_json(result.run_dir / "artifacts" / "candidate_profile.json")
+    profiles = read_json(result.run_dir / "artifacts" / "candidate_profiles.json")
     shortlist_rows = (
         result.run_dir / "artifacts" / "shortlist.csv"
     ).read_text(encoding="utf-8").splitlines()
 
+    assert "candidate_profiles" in result.created_artifacts
+    assert primary_profile["candidate_id"] == "candidate_001"
+    assert [profile["candidate_id"] for profile in profiles] == [
+        "candidate_001",
+        "candidate_002",
+    ]
     assert len(matches["results"]) == 2
     assert len(decision["decisions"]) == 2
     assert metrics["candidate_count"] == 2
     assert metrics["decision_count"] == 2
+    assert metrics["extraction"]["candidate_count"] == 2
+    assert metrics["extraction"]["candidate_profile_written"] is True
+    assert metrics["extraction"]["candidate_profiles_written"] is True
+    assert metrics["extraction"]["artifact_paths"] == [
+        "artifacts/candidate_profile.json",
+        "artifacts/candidate_profiles.json",
+    ]
+    assert "candidate_profile" in metrics["artifacts_created"]
+    assert "candidate_profiles" in metrics["artifacts_created"]
     assert len(shortlist_rows) == 3
 
 
-def read_json(path: Path) -> dict:
+def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 

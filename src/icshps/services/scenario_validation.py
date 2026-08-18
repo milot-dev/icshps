@@ -10,7 +10,8 @@ from typing import Protocol
 import yaml
 from pydantic import ValidationError
 
-from icshps.graph.workflow import EndToEndWorkflowResult, run_end_to_end_workflow
+from icshps.graph.langgraph_workflow import run_langgraph_workflow
+from icshps.graph.result import EndToEndWorkflowResult
 from icshps.schemas import FinalDecisionArtifact, RoutingCategory
 from icshps.services.bundle_loader import MANIFEST_FILENAME, load_hiring_bundle
 from icshps.services.run_scaffolding import (
@@ -25,6 +26,7 @@ REQUIRED_RUN_ARTIFACTS: tuple[Path, ...] = (
     Path("inputs/context_packet.json"),
     Path("artifacts/intake_findings.json"),
     Path("artifacts/candidate_profile.json"),
+    Path("artifacts/candidate_profiles.json"),
     Path("artifacts/match_scores.json"),
     Path("artifacts/compliance_flags.md"),
     Path("artifacts/verification_findings.json"),
@@ -164,7 +166,7 @@ def validate_all_scenario_bundles(
     runs_root: Path = Path("runs"),
     check_determinism: bool = True,
     allow_missing_scenarios: bool = False,
-    pipeline_runner: PipelineRunner = run_end_to_end_workflow,
+    pipeline_runner: PipelineRunner = run_langgraph_workflow,
 ) -> ScenarioValidationReport:
     """Discover, run, validate, and summarize all available scenario bundles."""
 
@@ -205,7 +207,7 @@ def validate_scenario_bundle(
     bundle_path: Path,
     runs_root: Path,
     check_determinism: bool = True,
-    pipeline_runner: PipelineRunner = run_end_to_end_workflow,
+    pipeline_runner: PipelineRunner = run_langgraph_workflow,
 ) -> ScenarioValidationResult:
     """Run one bundle through the backend pipeline and validate its outputs."""
 
@@ -422,7 +424,7 @@ def validate_deterministic_rerun(
     bundle_path: Path,
     runs_root: Path,
     run_id: str,
-    pipeline_runner: PipelineRunner = run_end_to_end_workflow,
+    pipeline_runner: PipelineRunner = run_langgraph_workflow,
 ) -> tuple[ValidationIssue, ...]:
     """Run the same bundle twice with the same run ID and compare artifact bytes."""
 

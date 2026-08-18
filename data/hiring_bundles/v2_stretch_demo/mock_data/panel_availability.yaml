@@ -1,0 +1,14 @@
+panel_id: ai_backend_panel_v2
+timezone: Europe/Berlin
+slots:
+  - interviewer: Priya Reviewer
+    role: Backend Lead
+    available:
+      - '2026-07-02T09:00:00+02:00'
+      - '2026-07-02T14:00:00+02:00'
+  - interviewer: Mateo Reviewer
+    role: People Partner
+    available:
+      - '2026-07-03T10:00:00+02:00'
+notes:
+  - Future scheduling mock only. Current pipeline must not generate calendar actions.

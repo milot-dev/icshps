@@ -100,6 +100,7 @@ def load_hiring_bundle(bundle_path: str | Path, *, run_id: str) -> LoadedBundle:
     )
     _validate_optional_inputs(
         manifest=resolved_manifest,
+        bundle_path=resolved_bundle_path,
         warnings=warnings,
         errors=errors,
     )
@@ -256,6 +257,7 @@ def _validate_candidate_resumes(
 def _validate_optional_inputs(
     *,
     manifest: HiringBundleManifest,
+    bundle_path: Path,
     warnings: list[str],
     errors: list[str],
 ) -> None:
@@ -266,6 +268,14 @@ def _validate_optional_inputs(
             continue
 
         if file_path.exists() and file_path.is_file():
+            if field_name == "ats_export":
+                _validate_ats_export(
+                    ats_export_path=file_path,
+                    bundle_path=bundle_path,
+                    warnings=warnings,
+                    errors=errors,
+                    allow_missing=manifest.execution.allow_missing_optional_inputs,
+                )
             continue
 
         message = (
@@ -323,7 +333,67 @@ def _build_initial_evidence_index(manifest: HiringBundleManifest) -> list[Eviden
             )
         )
 
+    optional_source_types = {
+        "ats_export": "mock_ats_export",
+        "ats_requisition": "mock_ats_requisition",
+        "fraud_signals": "mock_fraud_signals",
+    }
+    for field_name, file_path in manifest.optional_inputs:
+        if file_path is None or field_name not in optional_source_types:
+            continue
+        evidence.append(
+            EvidenceRef(
+                source_path=file_path,
+                source_type=optional_source_types[field_name],
+                section=field_name,
+                confidence=1.0,
+            )
+        )
+
     return evidence
+
+
+def _validate_ats_export(
+    *,
+    ats_export_path: Path,
+    bundle_path: Path,
+    warnings: list[str],
+    errors: list[str],
+    allow_missing: bool,
+) -> None:
+    try:
+        payload = _read_yaml_mapping(ats_export_path)
+    except ValueError as exc:
+        errors.append(f"Invalid optional_inputs.ats_export: {exc}")
+        return
+
+    applications = payload.get("applications") or payload.get("records") or []
+    if not isinstance(applications, list):
+        errors.append("optional_inputs.ats_export applications/records must be a list")
+        return
+
+    for index, application in enumerate(applications, start=1):
+        if not isinstance(application, dict):
+            errors.append(f"optional_inputs.ats_export record {index} must be an object")
+            continue
+        resume_path = application.get("resume_path")
+        if not resume_path:
+            continue
+
+        resolved_resume = Path(str(resume_path))
+        if not resolved_resume.is_absolute():
+            resolved_resume = (bundle_path / resolved_resume).resolve()
+        if resolved_resume.exists() and resolved_resume.is_file():
+            continue
+
+        message = (
+            "ATS mock export references a missing resume file: "
+            f"record {index} -> {resolved_resume}"
+        )
+        if allow_missing:
+            warnings.append(message)
+        else:
+            errors.append(message)
 
 
 def _failed_result(
